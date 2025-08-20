@@ -612,7 +612,7 @@ def get_gemini_response(question: str, products: list):
     if products:
         product_context = "\n".join([
             f"- {p['name']} | {p['price']} | {p.get('quantity', 'N/A')} | {p['source']} | {p['delivery_time']}"
-            for p in products[:20]
+            for p in products
         ])
     else:
         product_context = "(No recent products)"
@@ -620,6 +620,7 @@ def get_gemini_response(question: str, products: list):
     instruction = f"""
 You are Grocereye, a helpful grocery assistant.
 Answer based on the products below. Be concise.
+also tell about calories and any other thing about any product if asked
 
 Recent Products:
 {product_context}
