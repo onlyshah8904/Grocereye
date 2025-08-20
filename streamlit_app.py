@@ -710,7 +710,8 @@ if not st.session_state.pincode:
                         st.rerun()
                     else:
                         st.error("Failed to set location.")
-                except:
+                except Exception as e:
+                    print(e)
                     st.error("❌ Cannot connect to API. Is `python api.py` running?")
 else:
     st.success(f"📍 Active Pincode: {st.session_state.pincode}")
