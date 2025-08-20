@@ -1,4 +1,4 @@
-from DrissionPage import Chromium
+# from DrissionPage import Chromium
 # def set_location_via_pincode(pincode):
 #     """
 #     Automate location setting using pincode.
@@ -98,8 +98,3 @@ from DrissionPage import Chromium
 
 
 # print(set_location_via_pincode("380007"))
-import requests
-resp = requests.post(f"https://ea945e4019e3.ngrok-free.app/init-location?pincode=560001")
-
-print(resp.status_code)
-print(resp.text)
