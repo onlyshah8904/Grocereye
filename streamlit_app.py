@@ -117,6 +117,56 @@ import requests
 import json
 from datetime import datetime
 
+
+
+def get_gemini_response(question: str, products: list) -> str:
+    from configs import API_KEY
+    import requests as http_requests
+
+    # Truncate if too many products
+    if len(products) > 50:
+        products = products[:50]
+
+    instruction = f"""
+You are a smart grocery assistant. Answer the user's question based ONLY on the product list below.
+Be concise and helpful.
+
+Product List:
+{json.dumps(products, indent=2)}
+
+User Question: {question}
+
+Rules:
+- If asked for cheapest, find lowest price.
+- If asked for fastest delivery, find shortest delivery time.
+- If asked for brand (e.g., Amul), filter by name.
+- If no product matches, say so.
+- Never make up products.
+- Return only the answer.
+"""
+
+    headers = {
+        'Content-Type': 'application/json',
+        'X-goog-api-key': API_KEY,
+    }
+
+    json_data = {
+        "contents": [{"parts": [{"text": instruction}]}]
+    }
+
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+
+    try:
+        response = http_requests.post(url, headers=headers, json=json_data)
+        if response.status_code == 200:
+            data = response.json()
+            return data['candidates'][0]['content']['parts'][0]['text'].strip()
+        else:
+            return "Sorry, I couldn't fetch an answer right now."
+    except Exception as e:
+        return "Sorry, I'm having trouble connecting to the AI."
+
+
 # Page config
 st.set_page_config(page_title="🛒 Grocereye", layout="wide")
 
@@ -286,49 +336,3 @@ else:
 
 
 # === Gemini Chat Function ===
-def get_gemini_response(question: str, products: list) -> str:
-    from configs import API_KEY
-    import requests as http_requests
-
-    # Truncate if too many products
-    if len(products) > 50:
-        products = products[:50]
-
-    instruction = f"""
-You are a smart grocery assistant. Answer the user's question based ONLY on the product list below.
-Be concise and helpful.
-
-Product List:
-{json.dumps(products, indent=2)}
-
-User Question: {question}
-
-Rules:
-- If asked for cheapest, find lowest price.
-- If asked for fastest delivery, find shortest delivery time.
-- If asked for brand (e.g., Amul), filter by name.
-- If no product matches, say so.
-- Never make up products.
-- Return only the answer.
-"""
-
-    headers = {
-        'Content-Type': 'application/json',
-        'X-goog-api-key': API_KEY,
-    }
-
-    json_data = {
-        "contents": [{"parts": [{"text": instruction}]}]
-    }
-
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
-
-    try:
-        response = http_requests.post(url, headers=headers, json=json_data)
-        if response.status_code == 200:
-            data = response.json()
-            return data['candidates'][0]['content']['parts'][0]['text'].strip()
-        else:
-            return "Sorry, I couldn't fetch an answer right now."
-    except Exception as e:
-        return "Sorry, I'm having trouble connecting to the AI."
