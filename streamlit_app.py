@@ -594,7 +594,7 @@ def get_gemini_response(question: str, products: list):
     else:
         product_context = "\n".join([
             f"- {p['name']} | {p['price']} | {p.get('quantity', 'N/A')} | {p['source']} | {p['delivery_time']}"
-            for p in products[:20]
+            for p in products
         ])
 
     instruction = f"""
