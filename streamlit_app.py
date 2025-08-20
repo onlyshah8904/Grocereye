@@ -577,30 +577,49 @@
 # VERSION 4
 
 # streamlit_app.py
+# streamlit_app.py
 import streamlit as st
 import requests
 import json
 
-# Page config
-st.set_page_config(page_title="🛒 Grocereye", layout="wide")
+# ======================
+# Session State Initialization
+# ======================
+if "pincode" not in st.session_state:
+    st.session_state.pincode = None
+if "search_results" not in st.session_state:
+    st.session_state.search_results = []
+if "chat_messages" not in st.session_state:
+    st.session_state.chat_messages = []
+if "last_query" not in st.session_state:
+    st.session_state.last_query = ""
 
-# === Gemini Response Function ===
+# ======================
+# Page Config
+# ======================
+st.set_page_config(page_title="🛒 Grocereye", layout="wide")
+st.title("🛒 Grocereye")
+st.markdown("Your AI-powered grocery assistant")
+
+# ======================
+# Gemini AI Response Function
+# ======================
 def get_gemini_response(question: str, products: list):
     from configs import API_KEY
     import requests as http_requests
 
-    if not products:
-        product_context = "(No recent products. User is asking for general suggestions.)"
-    else:
+    # Build context
+    if products:
         product_context = "\n".join([
             f"- {p['name']} | {p['price']} | {p.get('quantity', 'N/A')} | {p['source']} | {p['delivery_time']}"
-            for p in products
+            for p in products[:20]
         ])
+    else:
+        product_context = "(No recent products)"
 
     instruction = f"""
 You are Grocereye, a helpful grocery assistant.
-Answer based on the product list below. If no products match, suggest alternatives.
-Be concise and friendly.
+Answer based on the products below. Be concise.
 
 Recent Products:
 {product_context}
@@ -611,7 +630,7 @@ Rules:
 - For 'cheapest', find lowest price.
 - For 'fastest delivery', check delivery_time.
 - For brands like 'Amul', filter by name.
-- For suggestions, recommend 3-5 real items.
+- For suggestions, recommend 3-5 real grocery items.
 - Never invent products.
 """
 
@@ -637,50 +656,42 @@ Rules:
     except Exception as e:
         return "Sorry, I can't reach the AI right now."
 
-# Session state
-if "pincode" not in st.session_state:
-    st.session_state.pincode = None
-if "search_results" not in st.session_state:
-    st.session_state.search_results = []
-if "chat_messages" not in st.session_state:
-    st.session_state.chat_messages = []
-if "last_query" not in st.session_state:
-    st.session_state.last_query = ""
-
-# Title
-st.title("🛒 Grocereye")
-st.markdown("Your AI-powered grocery assistant")
-
-# === Sidebar: Chat (Independent of Main Search) ===
+# ======================
+# Sidebar: Chat (Persistent)
+# ======================
 with st.sidebar:
     st.header("💬 Grocery Assistant")
     st.caption("Ask about products or get suggestions!")
 
-    # Display chat history
+    # Display chat messages
     for msg in st.session_state.chat_messages:
         with st.chat_message(msg["role"]):
             st.write(msg["content"])
 
-    # Chat input (only triggers chat, doesn't affect product view)
+    # Chat input
     if prompt := st.chat_input("Ask about groceries..."):
+        # Add user message
         st.session_state.chat_messages.append({"role": "user", "content": prompt})
+
+        # Show instantly
         with st.chat_message("user"):
             st.write(prompt)
 
+        # Get AI response
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
                 response = get_gemini_response(prompt, st.session_state.search_results)
                 st.write(response)
                 st.session_state.chat_messages.append({"role": "assistant", "content": response})
 
-        # ✅ DO NOT rerun or clear anything — keep products visible
-
-    # Optional: Clear chat button
+    # Clear chat
     if st.button("🗑️ Clear Chat"):
         st.session_state.chat_messages = []
         st.rerun()
 
-# === Main: Pincode & Product Search (Stays Alive) ===
+# ======================
+# Main: Pincode & Search
+# ======================
 
 # Step 1: Set Pincode
 if not st.session_state.pincode:
@@ -699,8 +710,7 @@ if not st.session_state.pincode:
                         st.rerun()
                     else:
                         st.error("Failed to set location.")
-                except Exception as e:
-                    print(e)
+                except:
                     st.error("❌ Cannot connect to API. Is `python api.py` running?")
 else:
     st.success(f"📍 Active Pincode: {st.session_state.pincode}")
@@ -715,68 +725,68 @@ else:
     user_query = st.text_input("Describe your need:", value=st.session_state.last_query, placeholder="e.g., I want milk and bread")
 
     if st.button("🔍 Find Products"):
-        if not user_query.strip():
-            st.warning("Please enter a query.")
-        else:
-            st.session_state.last_query = user_query
-            st.session_state.search_results = []  # Clear old results
-            with st.spinner("🧠 Understanding your needs..."):
-                try:
-                    kw_resp = requests.get(f"https://28b7c00f2207.ngrok-free.app/keywords?query={requests.utils.quote(user_query)}")
-                    if kw_resp.status_code != 200:
-                        st.error("Failed to understand your query.")
+        st.session_state.last_query = user_query
+        with st.spinner("🧠 Understanding your needs..."):
+            try:
+                # Fetch keywords
+                kw_resp = requests.get(f"https://28b7c00f2207.ngrok-free.app/keywords?query={requests.utils.quote(user_query)}")
+                if kw_resp.status_code != 200:
+                    st.error("Failed to understand your query.")
+                else:
+                    keywords = kw_resp.json().get("keywords", [])
+                    if not keywords:
+                        st.info("No relevant products found.")
                     else:
-                        keywords = kw_resp.json().get("keywords", [])
-                        if not keywords:
-                            st.info("No relevant products found.")
+                        st.markdown(f"**🔍 Searching for:** {', '.join(keywords)}")
+
+                        all_results = []
+                        for kw in keywords:
+                            with st.spinner(f"Searching for '{kw}'..."):
+                                search_resp = requests.get(
+                                    f"https://28b7c00f2207.ngrok-free.app/search?keyword={kw}&pincode={st.session_state.pincode}"
+                                )
+                                if search_resp.status_code == 200:
+                                    data = search_resp.json()
+                                    for r in data["results"]:
+                                        r["matched_keyword"] = kw
+                                    all_results.extend(data["results"])
+
+                        # Filter invalid
+                        def is_valid_product(p):
+                            return not (p.get("name") == "N/A" and p.get("price") == "N/A" and not p.get("image_url"))
+                        valid_results = [r for r in all_results if is_valid_product(r)]
+                        st.session_state.search_results = valid_results  # ✅ Save to session state
+
+                        if not valid_results:
+                            st.info("📭 No valid products found.")
                         else:
-                            st.markdown(f"**🔍 Searching for:** {', '.join(keywords)}")
+                            st.markdown(f"### 🎉 Found {len(valid_results)} products")
 
-                            all_results = []
-                            for kw in keywords:
-                                with st.spinner(f"Searching for '{kw}'..."):
-                                    search_resp = requests.get(
-                                        f"https://28b7c00f2207.ngrok-free.app/search?keyword={kw}&pincode={st.session_state.pincode}"
-                                    )
-                                    if search_resp.status_code == 200:
-                                        data = search_resp.json()
-                                        for r in data["results"]:
-                                            r["matched_keyword"] = kw
-                                        all_results.extend(data["results"])
+            except Exception as e:
+                st.error(f"Search failed: {str(e)}")
 
-                            # Filter invalid
-                            def is_valid_product(p):
-                                return not (p.get("name") == "N/A" and p.get("price") == "N/A" and not p.get("image_url"))
-                            valid_results = [r for r in all_results if is_valid_product(r)]
-                            st.session_state.search_results = valid_results
-
-                            if not valid_results:
-                                st.info("📭 No valid products found.")
-                            else:
-                                st.markdown(f"### 🎉 Found {len(valid_results)} products")
-
-                                # Show 3 per row
-                                for i in range(0, len(valid_results), 3):
-                                    cols = st.columns(3)
-                                    for j in range(3):
-                                        idx = i + j
-                                        if idx >= len(valid_results):
-                                            break
-                                        with cols[j]:
-                                            product = valid_results[idx]
-                                            if product.get("image_url"):
-                                                st.image(product["image_url"], width=100)
-                                            st.markdown(f"**{product['name']}**")
-                                            st.markdown(f"💰 {product['price']}")
-                                            if product.get("mrp") and product["mrp"] != "N/A":
-                                                st.markdown(f"~~{product['mrp']}~~")
-                                            if product.get("quantity") and product["quantity"] != "N/A":
-                                                st.markdown(f"📦 {product['quantity']}")
-                                            if product.get("delivery_time") and product["delivery_time"] != "N/A":
-                                                st.markdown(f"🚚 {product['delivery_time']}")
-                                            source = product["source"].split()[0]
-                                            st.markdown(f"[View on {source} 🛒]({product['url']})", unsafe_allow_html=True)
-
-                except Exception as e:
-                    st.error(f"Search failed: {str(e)}")
-
+# ======================
+# ✅ Always Render Products (Even After Chat)
+# ======================
+if st.session_state.search_results:
+    # Show products in 3-column grid
+    for i in range(0, len(st.session_state.search_results), 3):
+        cols = st.columns(3)
+        for j in range(3):
+            idx = i + j
+            if idx >= len(st.session_state.search_results):
+                break
+            with cols[j]:
+                product = st.session_state.search_results[idx]
+                if product.get("image_url"):
+                    st.image(product["image_url"], width=100)
+                st.markdown(f"**{product['name']}**")
+                st.markdown(f"💰 {product['price']}")
+                if product.get("mrp") and product["mrp"] != "N/A":
+                    st.markdown(f"~~{product['mrp']}~~")
+                if product.get("quantity") and product["quantity"] != "N/A":
+                    st.markdown(f"📦 {product['quantity']}")
+                if product.get("delivery_time") and product["delivery_time"] != "N/A":
+                    st.markdown(f"🚚 {product['delivery_time']}")
+                source = product["source"].split()[0]
+                st.markdown(f"[View on {source} 🛒]({product['url']})", unsafe_allow_html=True)
