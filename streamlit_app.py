@@ -440,7 +440,7 @@ with st.sidebar:
             st.write(msg["content"])
 
     # Chat input
-    if prompt := st.chat_input("Ask for suggestions or about products..."):
+    if prompt := st.chat_input("Ask anything about groceries..."):
         # Add user message
         st.session_state.chat_messages.append({"role": "user", "content": prompt})
 
