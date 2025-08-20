@@ -584,6 +584,59 @@ import json
 # Page config
 st.set_page_config(page_title="🛒 Grocereye", layout="wide")
 
+# === Gemini Response Function ===
+def get_gemini_response(question: str, products: list):
+    from configs import API_KEY
+    import requests as http_requests
+
+    if not products:
+        product_context = "(No recent products. User is asking for general suggestions.)"
+    else:
+        product_context = "\n".join([
+            f"- {p['name']} | {p['price']} | {p.get('quantity', 'N/A')} | {p['source']} | {p['delivery_time']}"
+            for p in products[:20]
+        ])
+
+    instruction = f"""
+You are Grocereye, a helpful grocery assistant.
+Answer based on the product list below. If no products match, suggest alternatives.
+Be concise and friendly.
+
+Recent Products:
+{product_context}
+
+User Question: {question}
+
+Rules:
+- For 'cheapest', find lowest price.
+- For 'fastest delivery', check delivery_time.
+- For brands like 'Amul', filter by name.
+- For suggestions, recommend 3-5 real items.
+- Never invent products.
+"""
+
+    headers = {
+        'Content-Type': 'application/json',
+        'X-goog-api-key': API_KEY,
+    }
+
+    json_data = {
+        "contents": [{"parts": [{"text": instruction}]}],
+        "generationConfig": {"temperature": 0.4, "maxOutputTokens": 300}
+    }
+
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+
+    try:
+        response = http_requests.post(url, headers=headers, json=json_data)
+        if response.status_code == 200:
+            data = response.json()
+            return data['candidates'][0]['content']['parts'][0]['text'].strip()
+        else:
+            return "I'm having trouble connecting to the AI."
+    except Exception as e:
+        return "Sorry, I can't reach the AI right now."
+
 # Session state
 if "pincode" not in st.session_state:
     st.session_state.pincode = None
@@ -727,55 +780,3 @@ else:
                 except Exception as e:
                     st.error(f"Search failed: {str(e)}")
 
-# === Gemini Response Function ===
-def get_gemini_response(question: str, products: list):
-    from configs import API_KEY
-    import requests as http_requests
-
-    if not products:
-        product_context = "(No recent products. User is asking for general suggestions.)"
-    else:
-        product_context = "\n".join([
-            f"- {p['name']} | {p['price']} | {p.get('quantity', 'N/A')} | {p['source']} | {p['delivery_time']}"
-            for p in products[:20]
-        ])
-
-    instruction = f"""
-You are Grocereye, a helpful grocery assistant.
-Answer based on the product list below. If no products match, suggest alternatives.
-Be concise and friendly.
-
-Recent Products:
-{product_context}
-
-User Question: {question}
-
-Rules:
-- For 'cheapest', find lowest price.
-- For 'fastest delivery', check delivery_time.
-- For brands like 'Amul', filter by name.
-- For suggestions, recommend 3-5 real items.
-- Never invent products.
-"""
-
-    headers = {
-        'Content-Type': 'application/json',
-        'X-goog-api-key': API_KEY,
-    }
-
-    json_data = {
-        "contents": [{"parts": [{"text": instruction}]}],
-        "generationConfig": {"temperature": 0.4, "maxOutputTokens": 300}
-    }
-
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
-
-    try:
-        response = http_requests.post(url, headers=headers, json=json_data)
-        if response.status_code == 200:
-            data = response.json()
-            return data['candidates'][0]['content']['parts'][0]['text'].strip()
-        else:
-            return "I'm having trouble connecting to the AI."
-    except Exception as e:
-        return "Sorry, I can't reach the AI right now."
