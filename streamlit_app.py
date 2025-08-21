@@ -796,62 +796,63 @@
 
 
 # version 5
+# streamlit_app.py
 import streamlit as st
 import requests
-import re
+import json
 
 # ======================
-# Session State Initialization
+# Session State
 # ======================
 if "pincode" not in st.session_state:
     st.session_state.pincode = None
-if "messages" not in st.session_state:
-    st.session_state.messages = []  # role, content, products, keywords (optional)
+if "chat_messages" not in st.session_state:
+    st.session_state.chat_messages = []
+if "search_results" not in st.session_state:
+    st.session_state.search_results = []  # Last fetched products
 
 # ======================
 # Page Config
 # ======================
-st.set_page_config(page_title="🛒 Grocereye", layout="centered")
+st.set_page_config(page_title="🛒 Grocereye Chat", layout="wide")
 st.title("🛒 Grocereye")
-st.markdown("Your AI-powered grocery assistant")
+st.markdown("Your AI grocery assistant. Start by setting pincode.")
 
 # ======================
-# Gemini AI Response Function (Enhanced Context)
+# Gemini Response Function
 # ======================
-def get_gemini_response(question: str, current_products=None, past_contexts=[]):
+def get_gemini_response(question: str, products: list = None):
     from configs import API_KEY
     import requests as http_requests
 
-    # Build current context
-    current_ctx = "\n".join([
-        f"- {p['name']} | {p['price']} | {p.get('quantity', 'N/A')} | {p['source']} | {p['delivery_time']}"
-        for p in (current_products or [])
-    ]) if current_products else "(No current products)"
-
-    # Build past context (only keywords + count)
-    past_ctx = "\n".join([
-        f"- Past '{ctx['keywords']}': {len(ctx['products'])} products" for ctx in past_contexts
-    ]) if past_contexts else "None"
+    # Build context
+    if products:
+        product_names = ", ".join([p["name"] for p in products if p.get("name") != "N/A"])
+        product_list = "\n".join([
+            f"- {p['name']} | {p['price']} | {p.get('quantity', 'N/A')} | {p['source']} | {p['delivery_time']}"
+            for p in products[:20]
+        ])
+    else:
+        product_names = "None"
+        product_list = "(No recent products)"
 
     instruction = f"""
 You are Grocereye, a helpful grocery assistant.
-Answer based on current AND past product results.
+Answer based on the conversation and product list.
+- If asked for 'cheapest', 'fastest', or a brand, use the product list.
+- If the question is new (e.g., 'milk prices'), say you'll search.
+- Never invent products.
+- Be concise.
 
-Current Products:
-{current_ctx}
-
-Past Searches:
-{past_ctx}
+Recent Products:
+{product_list}
 
 User Question: {question}
 
-Rules:
-- If user says 'earlier', 'before', 'previously', 'that Amul one', etc. → check Past Searches.
-- If they mention a product type (e.g., 'chocolate'), and it was searched before → use those results.
-- If they say 'cheapest', 'fastest', etc. → apply to the most relevant product list.
-- NEVER invent products. Only use provided data.
-- If unsure which list to use, ask for clarification.
-- If user says 'new', 'instead', 'don’t want X' → trigger fresh search.
+Respond with:
+- Answer (if can answer from context), OR
+- SEARCH:<keyword> (if needs fresh search)
+- PINCODE_CHANGE (if user wants to change pincode)
 """
 
     headers = {
@@ -861,7 +862,7 @@ Rules:
 
     json_data = {
         "contents": [{"parts": [{"text": instruction}]}],
-        "generationConfig": {"temperature": 0.4, "maxOutputTokens": 300}
+        "generationConfig": {"temperature": 0.3, "maxOutputTokens": 300}
     }
 
     url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
@@ -874,215 +875,153 @@ Rules:
         else:
             return "I'm having trouble connecting to the AI."
     except Exception as e:
-        return f"Sorry, I can't reach the AI. ({str(e)})"
+        return "Sorry, I can't reach the AI right now."
 
 # ======================
-# Helper: Extract Keywords
+# Product Search Function
 # ======================
-def get_keywords(query):
-    try:
-        resp = requests.get(f"https://28b7c00f2207.ngrok-free.app/keywords?query={requests.utils.quote(query)}")
-        if resp.status_code == 200:
-            return resp.json().get("keywords", [])
-        else:
-            return []
-    except Exception as e:
-        st.error(f"Keyword API failed: {e}")
-        return []
-
-# ======================
-# Helper: Search Products
-# ======================
-def search_products(keywords, pincode):
+def search_products(keywords: list, pincode: str):
     all_results = []
-    try:
-        for kw in keywords:
-            search_resp = requests.get(
-                f"https://28b7c00f2207.ngrok-free.app/search?keyword={requests.utils.quote(kw)}&pincode={pincode}"
+    for kw in keywords:
+        try:
+            resp = requests.get(
+                f"http://localhost:5000/search?keyword={kw}&pincode={pincode}"
             )
-            if search_resp.status_code == 200:
-                data = search_resp.json()
+            if resp.status_code == 200:
+                data = resp.json()
                 for r in data["results"]:
                     r["matched_keyword"] = kw
                 all_results.extend(data["results"])
-    except Exception as e:
-        st.error(f"Search failed: {e}")
-        return []
+        except:
+            pass
 
-    return [r for r in all_results if not (r.get("name") == "N/A" and r.get("price") == "N/A")]
+    # Filter invalid
+    def is_valid(p):
+        return p.get("name") != "N/A" or p.get("image_url")
+    valid = [r for r in all_results if is_valid(r)]
+    return valid
 
 # ======================
-# Retrieve Relevant Past Products
+# Display Product Grid
 # ======================
-def retrieve_relevant_products(query: str, messages):
-    # Extract all assistant messages with products
-    past_entries = []
-    for msg in messages:
-        if msg["role"] == "assistant" and "products" in msg and msg["products"]:
-            if "keywords" in msg:  # if stored
-                past_entries.append({"keywords": msg["keywords"], "products": msg["products"]})
-            else:
-                # Fallback: try to guess from content
-                pass
-
-    if not past_entries:
-        return None
-
-    query_lower = query.lower()
-
-    # Try to match keywords in past searches
-    for entry in reversed(past_entries):  # latest first
-        for kw in entry["keywords"]:
-            if kw.lower() in query_lower:
-                return entry["products"]  # return matching past results
-
-    # Fallback: if user says "earlier", "previous", "that one", return latest
-    if re.search(r"\b(earlier|previous|before|that|one I saw|first|second)\b", query_lower):
-        return past_entries[0]["products"]  # most recent
-
-    return None  # no match
+def show_product_grid(products):
+    st.markdown(f"### 🎉 Found {len(products)} products")
+    for i in range(0, len(products), 3):
+        cols = st.columns(3)
+        for j in range(3):
+            idx = i + j
+            if idx >= len(products):
+                break
+            with cols[j]:
+                p = products[idx]
+                if p.get("image_url"):
+                    st.image(p["image_url"], width=100)
+                st.markdown(f"**{p['name']}**")
+                st.markdown(f"💰 {p['price']}")
+                if p.get("mrp") != "N/A":
+                    st.markdown(f"~~{p['mrp']}~~")
+                if p.get("quantity") != "N/A":
+                    st.markdown(f"📦 {p['quantity']}")
+                if p.get("delivery_time") != "N/A":
+                    st.markdown(f"🚚 {p['delivery_time']}")
+                source = p["source"].split()[0]
+                st.markdown(f"[View on {source} 🛒]({p['url']})", unsafe_allow_html=True)
 
 # ======================
 # Chat Interface
 # ======================
-
-# Display messages
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.write(message["content"])
-        if "products" in message and message["products"]:
-            cols = st.columns(3)
-            for i, p in enumerate(message["products"]):
-                with cols[i % 3]:
-                    if p.get("image_url"):
-                        st.image(p["image_url"], width=100)
-                    st.markdown(f"**{p['name']}**")
-                    st.markdown(f"💰 {p['price']}")
-                    if p.get("mrp") and p["mrp"] != "N/A":
-                        st.markdown(f"~~{p['mrp']}~~")
-                    if p.get("quantity") and p["quantity"] != "N/A":
-                        st.markdown(f"📦 {p['quantity']}")
-                    if p.get("delivery_time") and p["delivery_time"] != "N/A":
-                        st.markdown(f"🚚 {p['delivery_time']}")
-                    source = p["source"].split()[0]
-                    st.markdown(f"[View on {source} 🛒]({p['url']})", unsafe_allow_html=True)
-
-# ----------------------
-# Pincode Setup
-# ----------------------
-if not st.session_state.pincode:
-    st.divider()
-    st.subheader("📍 Welcome! Set your delivery pincode")
-    pincode_input = st.text_input("Enter your pincode:", placeholder="e.g., 380007")
-
-    if st.button("Set Pincode"):
-        if pincode_input.strip():
-            try:
-                resp = requests.post(f"https://28b7c00f2207.ngrok-free.app/init-location?pincode={pincode_input.strip()}")
-                if resp.status_code == 200:
-                    st.session_state.pincode = pincode_input.strip()
-                    st.success(f"✅ Location set: {pincode_input}")
-                    st.rerun()
-                else:
-                    st.error("Failed to set location.")
-            except Exception as e:
-                st.error("❌ Cannot connect to backend. Is `python api.py` running?")
+# Show chat history
+for msg in st.session_state.chat_messages:
+    with st.chat_message(msg["role"]):
+        if msg["content"].startswith("PRODUCTS:"):
+            # It's a product message
+            _, query = msg["content"].split(" | ")
+            st.markdown(f"🔍 Showing results for: **{query}**")
+            show_product_grid(st.session_state.search_results)
         else:
-            st.error("Pincode is required.")
-else:
-    st.divider()
-    st.markdown(
-        f"<div style='text-align: center; font-size: 0.9em; color: gray;'>"
-        f"📍 Pincode: {st.session_state.pincode} | "
-        f"<a href='#' onclick='window.location.reload()'>Change</a>"
-        f"</div>",
-        unsafe_allow_html=True
-    )
+            st.write(msg["content"])
 
-    # Chat input
-    if prompt := st.chat_input("Need groceries? Ask here..."):
+# Chat input
+if prompt := st.chat_input("Set pincode or ask for groceries..."):
+    # Add user message
+    st.session_state.chat_messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.write(prompt)
 
-        # Add user message
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.write(prompt)
-
-        with st.chat_message("assistant"):
-            # Step 1: Get keywords for current query
-            keywords = get_keywords(prompt)
-
-            # Step 2: Decide: New search or use past?
-            use_past_products = None
-            is_new_search = True
-
-            # Only try to retrieve if no new keywords (e.g., follow-up)
-            if not keywords or re.search(r"\b(cheapest|fastest|earlier|previous|that|don't want|instead|change)\b", prompt.lower()):
-                use_past_products = retrieve_relevant_products(prompt, st.session_state.messages)
-
-            if use_past_products is not None:
-                st.markdown("🔍 Using relevant past results...")
-                products = use_past_products
-                final_keywords = ["(referenced from history)"]
-                is_new_search = False
-            elif keywords:
-                st.markdown(f"🔍 Searching for: *{', '.join(keywords)}*")
-                products = search_products(keywords, st.session_state.pincode)
-                final_keywords = keywords
-                is_new_search = True
+    # AI Response
+    with st.chat_message("assistant"):
+        # Pincode logic
+        if not st.session_state.pincode:
+            if "pincode" in prompt:
+                try:
+                    pincode = ''.join(filter(str.isdigit, prompt))
+                    if len(pincode) == 6:
+                        # Try to set
+                        resp = requests.post(f"http://localhost:5000/init-location?pincode={pincode}")
+                        if resp.status_code == 200:
+                            st.session_state.pincode = pincode
+                            msg = f"✅ Pincode set to {pincode}. You can now search for groceries!"
+                        else:
+                            msg = "❌ Failed to set pincode. Try again."
+                    else:
+                        msg = "❌ Please enter a valid 6-digit pincode."
+                except:
+                    msg = "❌ Unable to connect to server."
             else:
-                response = "I didn't understand your request. Try mentioning a product."
-                st.write(response)
-                st.session_state.messages.append({"role": "assistant", "content": response})
+                msg = "📍 Please set your pincode first. Example: 'My pincode is 380007'"
+        else:
+            # Handle change pincode
+            if "change pincode" in prompt.lower():
+                st.session_state.pincode = None
+                st.session_state.search_results = []
+                st.session_state.chat_messages = st.session_state.chat_messages[:-1]  # Remove last user msg
                 st.rerun()
 
-            if not products:
-                response = "Sorry, I couldn't find any products for that."
-                st.write(response)
-                st.session_state.messages.append({"role": "assistant", "content": response})
+            # Get AI decision
+            ai_response = get_gemini_response(prompt, st.session_state.search_results)
+
+            if ai_response.startswith("SEARCH:"):
+                keyword = ai_response.replace("SEARCH:", "").strip()
+                with st.spinner(f"Searching for '{keyword}'..."):
+                    keywords = [keyword]
+                    # Or call /keywords to expand
+                    try:
+                        kw_resp = requests.get(f"http://localhost:5000/keywords?query={keyword}")
+                        if kw_resp.status_code == 200:
+                            keywords = kw_resp.json().get("keywords", [keyword])
+                    except:
+                        pass
+
+                    results = search_products(keywords, st.session_state.pincode)
+                    st.session_state.search_results = results
+
+                    if results:
+                        show_product_grid(results)
+                        msg = f"PRODUCTS: Showing results for '{keyword}'"
+                    else:
+                        msg = "📭 No products found. Try another query."
+
+            elif ai_response == "PINCODE_CHANGE":
+                st.session_state.pincode = None
+                st.session_state.search_results = []
+                st.session_state.chat_messages = st.session_state.chat_messages[:-1]
                 st.rerun()
+            else:
+                msg = ai_response
 
-            # Step 3: Get AI response with full context
-            ai_response = get_gemini_response(
-                prompt,
-                current_products=products,
-                past_contexts=[
-                    {"keywords": msg.get("keywords", ["unknown"]), "products": msg["products"]}
-                    for msg in st.session_state.messages
-                    if msg["role"] == "assistant" and "products" in msg
-                ]
-            )
-            st.write(ai_response)
+        # Show message
+        if msg.startswith("PRODUCTS:"):
+            st.markdown(msg.replace("PRODUCTS:", "").strip())
+        else:
+            st.write(msg)
+        st.session_state.chat_messages.append({"role": "assistant", "content": msg})
 
-            # Step 4: Show products
-            cols = st.columns(3)
-            displayed = 0
-            for i, p in enumerate(products[:9]):
-                with cols[displayed % 3]:
-                    if p.get("image_url"):
-                        st.image(p["image_url"], width=100)
-                    st.markdown(f"**{p['name']}**")
-                    st.markdown(f"💰 {p['price']}")
-                    if p.get("mrp") and p["mrp"] != "N/A":
-                        st.markdown(f"~~{p['mrp']}~~")
-                    if p.get("quantity") and p["quantity"] != "N/A":
-                        st.markdown(f"📦 {p['quantity']}")
-                    if p.get("delivery_time") and p["delivery_time"] != "N/A":
-                        st.markdown(f"🚚 {p['delivery_time']}")
-                    source = p["source"].split()[0]
-                    st.markdown(f"[View on {source} 🛒]({p['url']})", unsafe_allow_html=True)
-                displayed += 1
-
-            # Step 5: Save assistant message
-            msg = {
-                "role": "assistant",
-                "content": ai_response,
-                "products": products[:9]
-            }
-            if is_new_search:
-                msg["keywords"] = final_keywords  # for future reference
-            st.session_state.messages.append(msg)
-
-    # Clear chat
-    if st.button("🗑️ Clear Chat"):
-        st.session_state.messages = []
+# Sidebar: Clear or change
+with st.sidebar:
+    st.header("⚙️ Settings")
+    if st.button("🧹 Clear Chat"):
+        st.session_state.chat_messages = []
+        st.session_state.search_results = []
         st.rerun()
+    st.write(f"📍 Current Pincode: `{st.session_state.pincode}`")
+    st.caption("Type 'change pincode' to update.")
