@@ -1725,11 +1725,11 @@ def is_valid_product(p):
 # Show Product Grid (No Add to Cart)
 # ======================
 def show_product_grid(products):
-    valid_products = [p for p in products if is_valid_product(p)]
-    if not valid_products:
-        st.info("📭 No valid products found.")
-        return
-
+    # valid_products = [p for p in products if is_valid_product(p)]
+    # if not valid_products:
+        # st.info("📭 No valid products found.")
+        # return
+    valid_products = products
     st.markdown(f"### 🎉 Found {len(valid_products)} products")
 
     for i in range(0, len(valid_products), 3):
