@@ -1353,19 +1353,40 @@ st.title("🧠 Grocereye AI")
 st.markdown("Your intelligent grocery assistant")
 
 # ======================
-# Gemini AI: Dynamic Intent Extractor
+# Gemini AI: Dynamic Intent & Analysis
 # ======================
-def extract_keywords(query: str):
+def gemini_query(prompt: str):
     try:
         from configs import API_KEY
         if not API_KEY.strip():
-            return [query]
+            return "❌ AI not available: No API key."
 
-        instruction = f"""
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+        headers = {
+            "Content-Type": "application/json",
+            "X-goog-api-key": API_KEY,
+        }
+        data = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 200}
+        }
+        response = requests.post(url, headers=headers, json=data, timeout=30)
+        if response.status_code == 200:
+            return response.json()['candidates'][0]['content']['parts'][0]['text'].strip()
+        else:
+            return f"❌ AI Error: {response.status_code}"
+    except Exception as e:
+        return f"❌ AI Failed: {str(e)}"
+
+# ======================
+# Extract Keywords with Gemini (Dynamic Intent)
+# ======================
+def extract_keywords(query: str):
+    instruction = f"""
 You are a shopping intent analyzer. Extract only grocery product keywords.
 Rules:
 - Return ONLY a JSON array of lowercase strings.
-- "I am hungry" → ["chips", "biscuits", "chocolates", "nuts"]
+- "I am hungry" → ["chips", "biscuits", "chocolates", "nuts", "snacks"]
 - "craving for something spicy" → ["spicy noodles", "potato chips", "pickle", "papad", "namkeen"]
 - "want something sweet" → ["chocolates", "mithai", "ice cream", "desserts", "sweets"]
 - "need ingredients for tea" → ["tea powder", "sugar", "milk", "cardamom"]
@@ -1376,37 +1397,14 @@ Rules:
 Input: {query.strip()}
 Output (JSON only):
 """
-
-        headers = {
-            'Content-Type': 'application/json',
-            'X-goog-api-key': API_KEY,
-        }
-
-        json_data = {
-            "contents": [{"parts": [{"text": instruction}]}],
-            "generationConfig": {
-                "temperature": 0.2,
-                "topP": 0.9,
-                "maxOutputTokens": 100,
-                "responseMimeType": "application/json"
-            }
-        }
-
-        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
-        response = requests.post(url, headers=headers, json=json_data, timeout=30)
-
-        if response.status_code == 200:
-            data = response.json()
-            raw_text = data['candidates'][0]['content']['parts'][0]['text'].strip()
-            keywords = json.loads(raw_text)
-            return [kw.strip().lower() for kw in keywords if kw.strip()]
-        else:
-            return [query]
-    except Exception as e:
+    result = gemini_query(instruction)
+    try:
+        return json.loads(result)
+    except:
         return [query]
 
 # ======================
-# Direct Search (via ngrok)
+# Direct Search (Only BigBasket via ngrok)
 # ======================
 def search_products(keywords: list, pincode: str):
     all_results = []
@@ -1420,7 +1418,7 @@ def search_products(keywords: list, pincode: str):
             if resp.status_code == 200:
                 data = resp.json()
                 for r in data.get("results", []):
-                    if r.get("name") and r["name"] != "N/A" and r.get("price") and r["price"] != "N/A":
+                    if r.get("source") == "BigBasket" and r.get("name") and r["name"] != "N/A" and r.get("price") and r["price"] != "N/A":
                         all_results.append(r)
         except Exception as e:
             st.error(f"Search failed for '{kw}': {str(e)}")
@@ -1533,17 +1531,54 @@ if prompt := st.chat_input("Ask or search..."):
             st.write(prompt)
 
         with st.chat_message("assistant"):
-            # Step 1: Use AI to extract keywords
-            keywords = extract_keywords(prompt)
-            search_keyword = keywords[0] if keywords else "products"
+            q = prompt.lower()
 
-            # Step 2: Search
-            st.write(f"🔍 Searching for: **{search_keyword}**")
-            results = search_products(keywords, st.session_state.pincode)
-            st.session_state.search_results = results
-            show_product_grid(results)
-            st.session_state.chat_messages.append({
-                "role": "assistant",
-                "content": f"PRODUCTS: Showing results for '{search_keyword}'"
-            })
+            # Step 1: Check if it's a follow-up question
+            is_follow_up = st.session_state.search_results and any(
+                word in q for word in ["cheapest", "fastest", "quickest", "delivery", "price", "cost", "compare", "better", "recommended", "good", "best", "suggest", "organic", "healthy"]
+            )
+
+            if is_follow_up:
+                # ✅ Use Gemini AI to analyze previous results
+                context = "Recent Products:\n" + json.dumps([
+                    {
+                        "name": p["name"],
+                        "price": p["price"],
+                        "mrp": p.get("mrp"),
+                        "delivery_time": p.get("delivery_time"),
+                        "quantity": p.get("quantity")
+                    } for p in st.session_state.search_results[:20]
+                ], indent=2)
+
+                analysis_prompt = f"""
+{context}
+
+User Question: {prompt}
+Answer concisely. Recommend 1-2 products with reason.
+"""
+
+                response = gemini_query(analysis_prompt)
+                st.write(response)
+                show_product_grid(st.session_state.search_results)
+
+                # Reuse previous keyword
+                prev_msg = next((m for m in reversed(st.session_state.chat_messages) if m["role"] == "assistant" and m["content"].startswith("PRODUCTS:")), None)
+                keyword = prev_msg["content"].split("'")[1] if prev_msg else "products"
+
+                st.session_state.chat_messages.append({
+                    "role": "assistant",
+                    "content": f"PRODUCTS: Showing results for '{keyword}'"
+                })
+            else:
+                # Step 2: New search
+                st.write(f"🔍 Understanding your needs...")
+                keywords = extract_keywords(prompt)
+                search_keyword = keywords[0] if keywords else "products"
+                results = search_products(keywords, st.session_state.pincode)
+                st.session_state.search_results = results
+                show_product_grid(results)
+                st.session_state.chat_messages.append({
+                    "role": "assistant",
+                    "content": f"PRODUCTS: Showing results for '{search_keyword}'"
+                })
         st.rerun()
