@@ -127,7 +127,7 @@ def search_in_active_session(keyword, pincode):
             params=params,
             cookies=session["cookies"],
             headers=headers,
-            impersonate="edge99"
+            impersonate="edge110"
         )
         if resp.status_code != 200:
             return []
