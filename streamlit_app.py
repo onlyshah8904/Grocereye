@@ -1394,7 +1394,7 @@ def search_products(keyword: str, pincode: str):
 
         data = resp.json().get("results", [])
         results = []
-        for r in 
+        for r in data:
             # Skip invalid products
             if not r.get("name") or r["name"] == "N/A" or not r.get("price") or r["price"] == "N/A":
                 continue
