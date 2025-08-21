@@ -1543,7 +1543,7 @@ if prompt := st.chat_input("Ask or search..."):
                     st.write(f"🔍 Searching for: **{prompt}**")
                     keywords = extract_keywords(prompt)
                     results = search_products(keywords, st.session_state.pincode)
-                    st.session.search_results = results
+                    st.session_state.search_results = results
                     show_product_grid(results)
                     st.session_state.chat_messages.append({
                         "role": "assistant",
