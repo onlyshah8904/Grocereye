@@ -1332,11 +1332,11 @@
 
 # streamlit_app.py
 # streamlit_app.py
-# streamlit_app.py
 import streamlit as st
 import requests
 import json
 import time
+from typing import List, Dict
 
 # ======================
 # Session State Initialization
@@ -1355,213 +1355,210 @@ if "dark_mode" not in st.session_state:
 # ======================
 # Page Config
 # ======================
-st.set_page_config(page_title="🛒 Grocereye", layout="wide")
+st.set_page_config(page_title="🧠 Grocereye AI", layout="wide")
 
-# Dynamic Dark Mode Styling
+# Dynamic Dark Mode
 if st.session_state.dark_mode:
     st.markdown("""
     <style>
-        body { color: #eee; background-color: #1e1e1e; }
-        .stApp { background-color: #1e1e1e; }
+        body { color: #eee; background: #111; }
+        .stApp { background: #111; }
         .css-1d391kg { color: #eee; }
-        .cart-item { padding: 10px; margin: 8px 0; border-bottom: 1px solid #444; }
+        .product-card { background: #222; padding: 10px; border-radius: 12px; }
+        .cart-item { padding: 10px; margin: 6px 0; border-bottom: 1px solid #444; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🛒 Grocereye")
-st.markdown("Your AI-powered grocery assistant")
+st.title("🧠 Grocereye AI")
+st.markdown("Your intelligent grocery assistant. Powered by AI, driven by intent.")
 
 # ======================
-# Dynamic Intent Analyzer (No Hardcoded Keywords)
+# 🧠 AI Core: Unified Search + Rank + Chat
 # ======================
-def classify_intent(prompt: str):
-    """
-    Uses Gemini to decide:
-    - If the input is a direct product (e.g., "KitKat", "Amul Butter") → return ["keyword"]
-    - If it's general intent (e.g., "I'm hungry") → return [] → trigger full keyword extraction
-    """
-    try:
-        from configs import API_KEY
-        if not API_KEY.strip():
-            return None, "API Key missing"
+class GroceryAI:
+    def __init__(self, ngrok_url: str, api_key: str):
+        self.ngrok_url = ngrok_url
+        self.api_key = api_key
 
-        instruction = f"""
-You are a smart grocery intent classifier.
-Analyze the user's message and respond with:
-- PRODUCT:<keyword> if it's a specific grocery item, brand, or product
-- GENERAL if it's a general query (e.g., 'I want snacks', 'I am hungry')
-
-Rules:
-- Be strict: only classify as PRODUCT if it's a real, shoppable item.
-- Normalize: 'dairy milk' → 'chocolate', 'amul butter' → 'butter'
-- Never make up products.
-
-Examples:
-Input: "Get me KitKat"
-Output: PRODUCT:chocolate
-
-Input: "I am hungry"
-Output: GENERAL
-
-Input: "Need milk"
-Output: PRODUCT:milk
-
-Input: "What should I buy for breakfast?"
-Output: GENERAL
-
-Now process:
-Input: {prompt.strip()}
-Output:
-"""
-
-        headers = {
-            'Content-Type': 'application/json',
-            'X-goog-api-key': API_KEY,
-        }
-
-        json_data = {
-            "contents": [{"parts": [{"text": instruction}]}],
-            "generationConfig": {"temperature": 0.1, "maxOutputTokens": 50}
-        }
-
-        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
-
-        response = requests.post(url, headers=headers, json=json_data, timeout=30)
-        if response.status_code != 200:
-            return None, f"AI Error: {response.status_code}"
-
-        data = response.json()
-        ai_response = data['candidates'][0]['content']['parts'][0]['text'].strip()
-
-        if ai_response.startswith("PRODUCT:"):
-            keyword = ai_response.replace("PRODUCT:", "").strip()
-            return [keyword], "direct"
-        elif ai_response == "GENERAL":
-            return None, "general"
-        else:
-            return None, "general"
-
-    except Exception as e:
-        return None, "error"
-
-# ======================
-# Fallback Keyword Extractor (for general intent)
-# ======================
-def extract_keywords(prompt: str):
-    try:
-        from configs import API_KEY
-        instruction = f"""
-You are a shopping intent analyzer. Extract only grocery product keywords.
-Rules:
-- Return ONLY a JSON array of lowercase strings.
-- Use synonyms: "hungry" → "snacks", "thirsty" → "juice"
-- Avoid verbs, adjectives.
-
-Input: {prompt.strip()}
-Output (JSON only):
-"""
-
-        headers = {
-            'Content-Type': 'application/json',
-            'X-goog-api-key': API_KEY,
-        }
-
-        json_data = {
-            "contents": [{"parts": [{"text": instruction}]}],
-            "generationConfig": {
-                "temperature": 0.2,
-                "topP": 0.9,
-                "maxOutputTokens": 100,
-                "responseMimeType": "application/json"
-            }
-        }
-
-        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
-        response = requests.post(url, headers=headers, json=json_data, timeout=30)
-
-        if response.status_code != 200:
-            return []
-
-        data = response.json()
-        raw_text = data['candidates'][0]['content']['parts'][0]['text'].strip()
-        keywords = json.loads(raw_text)
-        return [kw.strip().lower() for kw in keywords if kw.strip()]
-    except:
-        return ["snacks"]  # fallback
-
-# ======================
-# Product Search Function (Uses ngrok)
-# ======================
-def search_products(keywords: list, pincode: str):
-    all_results = []
-    for kw in keywords:
+    def search(self, query: str, pincode: str) -> List[Dict]:
+        """Search and rank products with AI"""
         try:
             resp = requests.get(
-                f"https://28b7c00f2207.ngrok-free.app/search",
-                params={"keyword": kw, "pincode": pincode, "key": "K8904AI"},
+                f"{self.ngrok_url}/search",
+                params={"keyword": query, "pincode": pincode, "key": self.api_key},
                 timeout=60
             )
-            if resp.status_code == 200:
-                data = resp.json()
-                for r in data.get("results", []):
-                    r["matched_keyword"] = kw
-                all_results.extend(data["results"])
+            if resp.status_code != 200:
+                return []
+
+            data = resp.json().get("results", [])
+            products = [
+                p for p in data
+                if p.get("name") and p["name"] != "N/A"
+                and p.get("price") and p["price"] != "N/A"
+            ]
+
+            # 🧠 AI Ranking: Score by price, delivery, value
+            for p in products:
+                price_val = self._extract_price(p["price"])
+                mrp_val = self._extract_price(p.get("mrp", "0"))
+                discount = (mrp_val - price_val) / mrp_val if mrp_val > 0 else 0
+
+                # Extract delivery time in minutes
+                delivery = self._extract_delivery_time(p.get("delivery_time", ""))
+
+                # Score: high discount, low price, fast delivery
+                p["ai_score"] = (
+                    (100 - price_val) * 0.4 +
+                    (delivery * -1) * 0.3 +
+                    (discount * 100) * 0.3
+                )
+
+            # Sort by AI score
+            return sorted(products, key=lambda x: x["ai_score"], reverse=True)
+
         except Exception as e:
-            st.error(f"Request failed for '{kw}': {str(e)}")
-            continue
-    return all_results
+            st.warning(f"Search error: {e}. Using AI reasoning.")
+            return []
+
+    def chat(self, question: str, products: List[Dict]) -> str:
+        """AI chat with context-aware reasoning"""
+        context = json.dumps([
+            {
+                "name": p["name"],
+                "price": p["price"],
+                "mrp": p.get("mrp", "N/A"),
+                "quantity": p.get("quantity", "N/A"),
+                "source": p["source"],
+                "delivery_time": p["delivery_time"]
+            }
+            for p in products[:20]
+        ], indent=2) if products else "(No products)"
+
+        prompt = f"""
+You are Grocereye AI, a smart grocery assistant.
+Use deep reasoning to answer based on product list.
+
+Product List:
+{context}
+
+User Question: {question}
+
+Rules:
+- If asked for 'cheapest', find lowest price.
+- If 'fastest delivery', find shortest delivery time.
+- If 'Amul', filter by brand.
+- If 'best value', use price + discount + delivery.
+- Never invent products.
+- Be concise, helpful, and intelligent.
+
+Answer:
+"""
+
+        try:
+            from configs import API_KEY
+            headers = {
+                'Content-Type': 'application/json',
+                'X-goog-api-key': API_KEY,
+            }
+            json_data = {
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {"temperature": 0.2, "maxOutputTokens": 300}
+            }
+            url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+            response = requests.post(url, headers=headers, json=json_data, timeout=30)
+            if response.status_code == 200:
+                return response.json()['candidates'][0]['content']['parts'][0]['text'].strip()
+            else:
+                return self._fallback_response(question, products)
+        except:
+            return self._fallback_response(question, products)
+
+    def _fallback_response(self, question: str, products: List[Dict]) -> str:
+        """Smart fallback when AI fails"""
+        q = question.lower()
+        if not products:
+            return "I found no products. Try searching first."
+
+        if "cheapest" in q:
+            cheapest = min(products, key=lambda x: self._extract_price(x["price"]))
+            return f"The cheapest is **{cheapest['name']}** at {cheapest['price']} from {cheapest['source']}."
+
+        if "fastest" in q or "quick" in q or "soon" in q:
+            fastest = min(products, key=lambda x: self._extract_delivery_time(x["delivery_time"]))
+            return f"Fastest delivery: **{fastest['name']}** in {fastest['delivery_time']}."
+
+        if any(brand in q for brand in ["amul", "parle", "nestle", "dairy milk"]):
+            brand_prods = [p for p in products if q.split()[0] in p["name"].lower()]
+            if brand_prods:
+                return f"I found {len(brand_prods)} items: " + ", ".join([p["name"] for p in brand_prods[:3]])
+            return f"No products from that brand."
+
+        if "value" in q or "best deal" in q:
+            best = max(products, key=lambda x: (self._extract_price(x.get("mrp", "0")) - self._extract_price(x["price"])))
+            return f"Best value: **{best['name']}** saves ₹{self._extract_price(best['mrp']) - self._extract_price(best['price'])}."
+
+        return "I can help with price, delivery, brand, and value comparisons."
+
+    def _extract_price(self, price: str) -> float:
+        try:
+            return float(''.join(filter(str.isdigit, price.replace('₹', ''))))
+        except:
+            return float('inf')
+
+    def _extract_delivery_time(self, dt: str) -> int:
+        try:
+            return int(''.join(filter(str.isdigit, dt)))
+        except:
+            return 30  # default
 
 # ======================
-# Filter Invalid Products
+# Initialize AI Engine
 # ======================
-def is_valid_product(p):
-    return (
-        p.get("name") and p["name"] != "N/A" and
-        p.get("price") and p["price"] != "N/A" and
-        p.get("image_url")
-    )
+try:
+    from configs import API_KEY
+except:
+    API_KEY = ""
+
+ai_engine = GroceryAI(
+    ngrok_url="https://28b7c00f2207.ngrok-free.app",
+    api_key=API_KEY
+)
 
 # ======================
-# Show Product Grid with Add to Cart
+# Show Product Grid
 # ======================
-def show_product_grid(products):
-    valid_products = [p for p in products if is_valid_product(p)]
-    if not valid_products:
-        st.info("📭 No valid products found.")
+def show_product_grid(products: List[Dict]):
+    if not products:
+        st.info("📭 No products found. Try another query.")
         return
 
-    st.markdown(f"### 🎉 Found {len(valid_products)} products")
+    st.markdown(f"### 🎯 Found {len(products)} products (AI-ranked)")
 
-    for i in range(0, len(valid_products), 3):
+    for i in range(0, len(products), 3):
         cols = st.columns(3)
         for j in range(3):
             idx = i + j
-            if idx >= len(valid_products):
+            if idx >= len(products):
                 break
             with cols[j]:
-                p = valid_products[idx]
-                st.image(p["image_url"], width=100)
+                p = products[idx]
                 st.markdown(f"**{p['name']}**")
-                st.markdown(f"💰 {p['price']}")
-                if p.get("mrp") and p["mrp"] != "N/A":
-                    st.markdown(f"~~{p['mrp']}~~")
+                st.markdown(f"💰 {p['price']} | ~~{p.get('mrp', 'N/A')}~~")
                 if p.get("quantity") and p["quantity"] != "N/A":
                     st.markdown(f"📦 {p['quantity']}")
-                if p.get("delivery_time") and p["delivery_time"] != "N/A":
-                    st.markdown(f"🚚 {p['delivery_time']}")
+                st.markdown(f"🚚 {p['delivery_time']}")
                 source = p["source"].split()[0]
+                if p.get("image_url"):
+                    st.image(p["image_url"], width=100)
                 st.markdown(f"[View on {source} 🛒]({p['url']})", unsafe_allow_html=True)
 
-                # Add to Cart Button with Unique Key
-                item_key = f"{p['name']}_{p['price']}_{p['source']}"
-                unique_key = f"add_{hash(item_key + str(time.time()))}_{idx}"
-
-                if st.button("🛒 Add to Cart", key=unique_key):
+                # Add to Cart
+                item_id = f"{p['name']}_{p['price']}_{p['source']}"
+                if st.button("🛒 Add to Cart", key=f"add_{hash(item_id) % 1e6}_{idx}"):
                     st.session_state.cart.append(p)
-                    st.success(f"✅ {p['name']} added!")
+                    st.success("✅ Added!")
                     st.rerun()
-
-    return valid_products
 
 # ======================
 # Sidebar: Pincode & Cart
@@ -1570,77 +1567,39 @@ with st.sidebar:
     st.header("📍 Delivery Location")
 
     if st.session_state.pincode:
-        st.write(f"**Current Pincode:** `{st.session_state.pincode}`")
+        st.write(f"`{st.session_state.pincode}`")
         if st.button("🔄 Change Pincode"):
             st.session_state.pincode = None
             st.session_state.search_results = []
-            st.session_state.chat_messages = []
             st.session_state.cart = []
+            st.session_state.chat_messages = []
             st.rerun()
     else:
-        pincode_input = st.text_input("Enter 6-digit pincode:", max_chars=6)
+        pincode_input = st.text_input("Enter pincode:", max_chars=6)
         if st.button("Set Pincode"):
-            if not pincode_input.isdigit() or len(pincode_input) != 6:
-                st.error("❌ Enter a valid 6-digit pincode.")
+            if pincode_input.isdigit() and len(pincode_input) == 6:
+                st.session_state.pincode = pincode_input
+                st.success("✅ Location set!")
+                st.rerun()
             else:
-                with st.spinner("Setting location..."):
-                    try:
-                        resp = requests.post(
-                            f"https://28b7c00f2207.ngrok-free.app/init-location",
-                            params={"pincode": pincode_input, "key": "K8904AI"}
-                        )
-                        if resp.status_code == 200:
-                            st.session_state.pincode = pincode_input
-                            st.success("✅ Location set!")
-                            st.rerun()
-                        else:
-                            st.error(f"❌ Failed: {resp.status_code}")
-                    except Exception as e:
-                        st.error("⚠️ Cannot connect to API.")
+                st.error("❌ Enter valid 6-digit pincode.")
 
     # Cart
     st.markdown("---")
     st.header("🛒 Your Cart")
     if st.session_state.cart:
-        total_price = 0
+        total = sum(ai_engine._extract_price(item["price"]) for item in st.session_state.cart)
         for i, item in enumerate(st.session_state.cart):
-            try:
-                price_val = float(''.join(filter(str.isdigit, item["price"].replace('₹', ''))))
-            except:
-                price_val = 0
-            total_price += price_val
-            with st.container():
-                st.markdown(f"""
-                <div class='cart-item'>
-                    <a href='{item['url']}' target='_blank' style='font-weight:bold'>{item['name']}</a><br>
-                    {item['price']} | {item.get('quantity', 'N/A')} | {item['source']}<br>
-                    <a href='{item['url']}' target='_blank'>🔗 View Product</a>
-                </div>
-                """, unsafe_allow_html=True)
-                if st.button("🗑️ Remove", key=f"remove_cart_{i}_{int(time.time())}"):
-                    st.session_state.cart.pop(i)
-                    st.rerun()
-        st.markdown(f"**Total: ₹{total_price:.2f}**")
-        if st.button("📦 Checkout (Simulate)"):
-            st.info(f"✅ Ordered {len(st.session_state.cart)} items worth ₹{total_price:.2f}!")
+            st.markdown(f"{item['name']} - {item['price']}")
+        st.markdown(f"**Total: ₹{total:.2f}**")
+        if st.button("📦 Checkout"):
+            st.info(f"✅ Ordered {len(st.session_state.cart)} items!")
     else:
-        st.markdown("Your cart is empty.")
+        st.markdown("Empty")
 
-    # Dark Mode Toggle
-    st.markdown("---")
+    # Dark Mode
     if st.button("🎨 Toggle Dark Mode"):
         st.session_state.dark_mode = not st.session_state.dark_mode
-        st.rerun()
-
-    # Chat History Preview
-    st.header("💬 Chat History")
-    for msg in st.session_state.chat_messages[-10:]:
-        role = "👤" if msg["role"] == "user" else "🤖"
-        st.markdown(f"{role} {msg['content'][:30]}...")
-
-    if st.button("🧹 Clear Chat"):
-        st.session_state.chat_messages = []
-        st.session_state.search_results = []
         st.rerun()
 
 # ======================
@@ -1648,53 +1607,29 @@ with st.sidebar:
 # ======================
 for msg in st.session_state.chat_messages:
     with st.chat_message(msg["role"]):
-        content = msg["content"]
-        if content.startswith("PRODUCTS:"):
-            if "for '" in content:
-                query = content.split("for '")[1].split("'")[0]
-            elif 'for "' in content:
-                query = content.split('for "')[1].split('"')[0]
-            else:
-                query = "this search"
-            st.markdown(f"🔍 Showing results for: **{query}**")
-            show_product_grid(st.session_state.search_results)
-        else:
-            st.write(content)
+        st.write(msg["content"])
 
 # Chat input
-if prompt := st.chat_input("Ask for groceries or set pincode..."):
+if prompt := st.chat_input("Ask or search..."):
     if not st.session_state.pincode:
-        st.error("Please set pincode first in the sidebar.")
+        st.error("Set pincode first.")
     else:
         st.session_state.chat_messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.write(prompt)
 
         with st.chat_message("assistant"):
-            # Step 1: Classify intent
-            keywords, intent_type = classify_intent(prompt)
-
-            if intent_type == "direct" and keywords:
-                st.write(f"🔍 Searching for: **{keywords[0]}**")
-                results = search_products(keywords, st.session_state.pincode)
-                st.session_state.search_results = results
-                show_product_grid(results)
-                msg = f"PRODUCTS: Showing results for '{keywords[0]}'"
-
-            elif intent_type == "general":
-                st.write("🧠 Understanding your needs...")
-                keywords = extract_keywords(prompt)
-                if not keywords:
-                    st.write("I couldn't find relevant products.")
-                    msg = "I couldn't find relevant products. Try another query."
-                else:
-                    st.write(f"🔍 Searching for: **{', '.join(keywords)}**")
-                    results = search_products(keywords, st.session_state.pincode)
+            # If it's a search query
+            if any(word in prompt.lower() for word in ["search", "find", "get", "want", "need"]):
+                with st.spinner("🧠 Searching with AI..."):
+                    results = ai_engine.search(prompt, st.session_state.pincode)
                     st.session_state.search_results = results
                     show_product_grid(results)
-                    msg = f"PRODUCTS: Showing results for '{', '.join(keywords)}'"
+                    msg = f"PRODUCTS: Showing results for '{prompt}'"
             else:
-                st.write("I'm having trouble understanding. Try again.")
-                msg = "I'm having trouble understanding. Try again."
+                # AI chat about existing results
+                response = ai_engine.chat(prompt, st.session_state.search_results)
+                st.write(response)
+                msg = response
 
             st.session_state.chat_messages.append({"role": "assistant", "content": msg})
