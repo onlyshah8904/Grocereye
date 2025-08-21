@@ -1332,6 +1332,7 @@
 
 # streamlit_app.py
 # streamlit_app.py
+# streamlit_app.py
 import streamlit as st
 import requests
 import hashlib
@@ -1373,16 +1374,12 @@ st.markdown("Your grocery assistant")
 # Generate Stable Product ID from URL + Name
 # ======================
 def get_product_id(product):
-    """Generate a stable ID using product URL and name"""
-    if not product.get("url") or not product.get("name"):
-        # Fallback: use name + price
-        unique_str = f"{product['name']}{product['price']}"
-    else:
-        unique_str = f"{product['url']}{product['name']}"
+    """Generate a stable, unique ID using product URL and name"""
+    unique_str = f"{product.get('url', '')}{product['name']}"
     return hashlib.md5(unique_str.encode()).hexdigest()[:16]
 
 # ======================
-# Direct Search (via ngrok)
+# Direct Search (Only BigBasket via ngrok)
 # ======================
 def search_products(keyword: str, pincode: str):
     try:
@@ -1392,14 +1389,18 @@ def search_products(keyword: str, pincode: str):
             timeout=60
         )
         if resp.status_code != 200:
+            st.error("❌ Failed to connect to API.")
             return []
 
         data = resp.json().get("results", [])
         results = []
-        for r in data:
-            if r.get("name") and r["name"] != "N/A" and r.get("price") and r["price"] != "N/A":
-                r["product_id"] = get_product_id(r)  # Stable ID
-                results.append(r)
+        for r in 
+            # Skip invalid products
+            if not r.get("name") or r["name"] == "N/A" or not r.get("price") or r["price"] == "N/A":
+                continue
+            # Assign stable product_id
+            r["product_id"] = get_product_id(r)
+            results.append(r)
         return results
     except Exception as e:
         st.error("❌ Failed to connect to API.")
@@ -1423,6 +1424,12 @@ def show_product_grid(products):
                 break
             with cols[j]:
                 p = products[idx]
+
+                # ✅ Skip if product_id missing
+                if "product_id" not in p:
+                    st.markdown("⚠️ Invalid product")
+                    continue
+
                 if p.get("image_url"):
                     st.image(p["image_url"], width=100)
                 st.markdown(f"**{p['name']}**")
@@ -1436,9 +1443,11 @@ def show_product_grid(products):
                 source = p["source"].split()[0]
                 st.markdown(f"[View on {source} 🛒]({p['url']})", unsafe_allow_html=True)
 
-                # ✅ Use product_id as key
+                # ✅ Unique button key using product_id + time
                 product_id = p["product_id"]
-                if st.button("🛒 Add to Cart", key=f"add_{product_id}"):
+                unique_key = f"add_cart_{product_id}_{int(time.time() * 1000) % 100000}"
+
+                if st.button("🛒 Add to Cart", key=unique_key):
                     if product_id not in st.session_state.cart:
                         st.session_state.cart[product_id] = p
                         st.success(f"✅ {p['name']} added!")
@@ -1486,15 +1495,15 @@ with st.sidebar:
     st.header("🛒 Your Cart")
     if isinstance(st.session_state.cart, dict) and st.session_state.cart:
         total = 0
-        # ✅ Safe iteration
-        cart_items = list(st.session_state.cart.items())
+        cart_items = list(st.session_state.cart.items())  # Safe copy
         for product_id, p in cart_items:
             try:
                 price_val = float(''.join(filter(str.isdigit, p["price"].replace('₹', ''))))
                 total += price_val
                 st.markdown(f"{p['name']} - {p['price']}")
-                # ✅ Remove button with stable key
-                if st.button("🗑️ Remove", key=f"remove_{product_id}"):
+
+                # ✅ Unique remove key
+                if st.button("🗑️ Remove", key=f"remove_{product_id}_{int(time.time() * 1000) % 100000}"):
                     if product_id in st.session_state.cart:
                         del st.session_state.cart[product_id]
                         st.rerun()
@@ -1547,7 +1556,6 @@ if prompt := st.chat_input("Ask or search..."):
     if not st.session_state.pincode:
         st.error("Please set pincode first.")
     else:
-        # Add to chat
         st.session_state.chat_messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.write(prompt)
