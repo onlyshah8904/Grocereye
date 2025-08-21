@@ -1332,9 +1332,11 @@
 
 # streamlit_app.py
 # streamlit_app.py
+# streamlit_app.py
 import streamlit as st
 import requests
 import json
+import time
 
 # ======================
 # Session State Initialization
@@ -1363,7 +1365,6 @@ if st.session_state.dark_mode:
         .stApp { background-color: #1e1e1e; }
         .css-1d391kg { color: #eee; }
         .cart-item { padding: 10px; margin: 8px 0; border-bottom: 1px solid #444; }
-        .product-card { background: #2d2d2d; padding: 10px; border-radius: 8px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -1371,63 +1372,122 @@ st.title("🛒 Grocereye")
 st.markdown("Your AI-powered grocery assistant")
 
 # ======================
-# Gemini AI Response Function
+# Dynamic Intent Analyzer (No Hardcoded Keywords)
 # ======================
-def get_gemini_response(question: str, products: list = None):
+def classify_intent(prompt: str):
+    """
+    Uses Gemini to decide:
+    - If the input is a direct product (e.g., "KitKat", "Amul Butter") → return ["keyword"]
+    - If it's general intent (e.g., "I'm hungry") → return [] → trigger full keyword extraction
+    """
     try:
         from configs import API_KEY
         if not API_KEY.strip():
-            return "❌ Gemini API Key is missing in configs.py"
-    except:
-        return "❌ API Key not found. Check configs.py"
+            return None, "API Key missing"
 
-    # Build product context
-    if products:
-        product_list = "\n".join([
-            f"- {p['name']} | {p['price']} | {p.get('quantity', 'N/A')} | {p['source']} | {p['delivery_time']}"
-            for p in products[:20] if p.get("name") != "N/A"
-        ])
-    else:
-        product_list = "(No recent products)"
-
-    instruction = f"""
-You are Grocereye, a helpful grocery assistant.
-Answer based on the products below. Be concise.
-
-Recent Products:
-{product_list}
-
-User Question: {question}
+        instruction = f"""
+You are a smart grocery intent classifier.
+Analyze the user's message and respond with:
+- PRODUCT:<keyword> if it's a specific grocery item, brand, or product
+- GENERAL if it's a general query (e.g., 'I want snacks', 'I am hungry')
 
 Rules:
-- If asked for 'cheapest', 'fastest delivery', or a brand (e.g., Amul), use product list.
-- If user asks about new items (e.g., 'milk', 'bread'), respond with: SEARCH:<item>
-- If user wants to change pincode, respond with: PINCODE_CHANGE
-- Never invent products.
-- Keep answers short.
+- Be strict: only classify as PRODUCT if it's a real, shoppable item.
+- Normalize: 'dairy milk' → 'chocolate', 'amul butter' → 'butter'
+- Never make up products.
+
+Examples:
+Input: "Get me KitKat"
+Output: PRODUCT:chocolate
+
+Input: "I am hungry"
+Output: GENERAL
+
+Input: "Need milk"
+Output: PRODUCT:milk
+
+Input: "What should I buy for breakfast?"
+Output: GENERAL
+
+Now process:
+Input: {prompt.strip()}
+Output:
 """
 
-    headers = {
-        'Content-Type': 'application/json',
-        'X-goog-api-key': API_KEY,
-    }
+        headers = {
+            'Content-Type': 'application/json',
+            'X-goog-api-key': API_KEY,
+        }
 
-    json_data = {
-        "contents": [{"parts": [{"text": instruction}]}],
-        "generationConfig": {"temperature": 0.3, "maxOutputTokens": 300}
-    }
+        json_data = {
+            "contents": [{"parts": [{"text": instruction}]}],
+            "generationConfig": {"temperature": 0.1, "maxOutputTokens": 50}
+        }
 
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
 
-    try:
         response = requests.post(url, headers=headers, json=json_data, timeout=30)
-        if response.status_code == 200:
-            data = response.json()
-            return data['candidates'][0]['content']['parts'][0]['text'].strip()
+        if response.status_code != 200:
+            return None, f"AI Error: {response.status_code}"
+
+        data = response.json()
+        ai_response = data['candidates'][0]['content']['parts'][0]['text'].strip()
+
+        if ai_response.startswith("PRODUCT:"):
+            keyword = ai_response.replace("PRODUCT:", "").strip()
+            return [keyword], "direct"
+        elif ai_response == "GENERAL":
+            return None, "general"
         else:
-            return f"❌ AI Error: {response.status_code}"
+            return None, "general"
+
     except Exception as e:
-        return "❌ Cannot connect to Gemini AI. Check your internet and API key."
+        return None, "error"
+
+# ======================
+# Fallback Keyword Extractor (for general intent)
+# ======================
+def extract_keywords(prompt: str):
+    try:
+        from configs import API_KEY
+        instruction = f"""
+You are a shopping intent analyzer. Extract only grocery product keywords.
+Rules:
+- Return ONLY a JSON array of lowercase strings.
+- Use synonyms: "hungry" → "snacks", "thirsty" → "juice"
+- Avoid verbs, adjectives.
+
+Input: {prompt.strip()}
+Output (JSON only):
+"""
+
+        headers = {
+            'Content-Type': 'application/json',
+            'X-goog-api-key': API_KEY,
+        }
+
+        json_data = {
+            "contents": [{"parts": [{"text": instruction}]}],
+            "generationConfig": {
+                "temperature": 0.2,
+                "topP": 0.9,
+                "maxOutputTokens": 100,
+                "responseMimeType": "application/json"
+            }
+        }
+
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+        response = requests.post(url, headers=headers, json=json_data, timeout=30)
+
+        if response.status_code != 200:
+            return []
+
+        data = response.json()
+        raw_text = data['candidates'][0]['content']['parts'][0]['text'].strip()
+        keywords = json.loads(raw_text)
+        return [kw.strip().lower() for kw in keywords if kw.strip()]
+    except:
+        return ["snacks"]  # fallback
 
 # ======================
 # Product Search Function (Uses ngrok)
@@ -1494,10 +1554,12 @@ def show_product_grid(products):
 
                 # Add to Cart Button with Unique Key
                 item_key = f"{p['name']}_{p['price']}_{p['source']}"
-                if st.button("🛒 Add to Cart", key=f"add_{item_key}_{idx}"):
+                unique_key = f"add_{hash(item_key + str(time.time()))}_{idx}"
+
+                if st.button("🛒 Add to Cart", key=unique_key):
                     st.session_state.cart.append(p)
                     st.success(f"✅ {p['name']} added!")
-                    st.rerun()  # Force refresh to show in cart
+                    st.rerun()
 
     return valid_products
 
@@ -1555,7 +1617,7 @@ with st.sidebar:
                     <a href='{item['url']}' target='_blank'>🔗 View Product</a>
                 </div>
                 """, unsafe_allow_html=True)
-                if st.button("🗑️ Remove", key=f"remove_cart_{i}"):
+                if st.button("🗑️ Remove", key=f"remove_cart_{i}_{int(time.time())}"):
                     st.session_state.cart.pop(i)
                     st.rerun()
         st.markdown(f"**Total: ₹{total_price:.2f}**")
@@ -1563,6 +1625,12 @@ with st.sidebar:
             st.info(f"✅ Ordered {len(st.session_state.cart)} items worth ₹{total_price:.2f}!")
     else:
         st.markdown("Your cart is empty.")
+
+    # Dark Mode Toggle
+    st.markdown("---")
+    if st.button("🎨 Toggle Dark Mode"):
+        st.session_state.dark_mode = not st.session_state.dark_mode
+        st.rerun()
 
     # Chat History Preview
     st.header("💬 Chat History")
@@ -1603,32 +1671,30 @@ if prompt := st.chat_input("Ask for groceries or set pincode..."):
             st.write(prompt)
 
         with st.chat_message("assistant"):
-            ai_resp = get_gemini_response(prompt, st.session_state.search_results)
+            # Step 1: Classify intent
+            keywords, intent_type = classify_intent(prompt)
 
-            if ai_resp.startswith("SEARCH:"):
-                keyword = ai_resp.replace("SEARCH:", "").strip().split()[0]
-                st.write(f"🔍 Searching for '{keyword}'...")
-
-                try:
-                    kw_resp = requests.get(
-                        f"https://28b7c00f2207.ngrok-free.app/keywords?query={keyword}"
-                    )
-                    keywords = kw_resp.json().get("keywords", [keyword]) if kw_resp.status_code == 200 else [keyword]
-                except:
-                    keywords = [keyword]
-
+            if intent_type == "direct" and keywords:
+                st.write(f"🔍 Searching for: **{keywords[0]}**")
                 results = search_products(keywords, st.session_state.pincode)
                 st.session_state.search_results = results
                 show_product_grid(results)
-                msg = f"PRODUCTS: Showing results for '{keyword}'"
+                msg = f"PRODUCTS: Showing results for '{keywords[0]}'"
 
-            elif ai_resp == "PINCODE_CHANGE":
-                st.session_state.pincode = None
-                st.session_state.search_results = []
-                st.session_state.chat_messages = st.session_state.chat_messages[:-1]
-                st.rerun()
+            elif intent_type == "general":
+                st.write("🧠 Understanding your needs...")
+                keywords = extract_keywords(prompt)
+                if not keywords:
+                    st.write("I couldn't find relevant products.")
+                    msg = "I couldn't find relevant products. Try another query."
+                else:
+                    st.write(f"🔍 Searching for: **{', '.join(keywords)}**")
+                    results = search_products(keywords, st.session_state.pincode)
+                    st.session_state.search_results = results
+                    show_product_grid(results)
+                    msg = f"PRODUCTS: Showing results for '{', '.join(keywords)}'"
             else:
-                st.write(ai_resp)
-                msg = ai_resp
+                st.write("I'm having trouble understanding. Try again.")
+                msg = "I'm having trouble understanding. Try again."
 
             st.session_state.chat_messages.append({"role": "assistant", "content": msg})
