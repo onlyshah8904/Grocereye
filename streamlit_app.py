@@ -1485,17 +1485,18 @@ with st.sidebar:
     st.header("🛒 Your Cart")
     cart_items = []
     total = 0
-    for product_id, qty in st.session_state.cart.items():
-        # Find product in search_results
-        product = next((p for p in st.session_state.search_results if p["product_id"] == product_id), None)
-        if product:
-            try:
-                price_val = float(''.join(filter(str.isdigit, product["price"].replace('₹', ''))))
-                total += price_val * qty
-                cart_items.append(product)
-                st.markdown(f"{product['name']} - {product['price']} (×{qty})")
-            except:
-                pass
+    if st.session_state.cart.items():
+        for product_id, qty in st.session_state.cart.items():
+            # Find product in search_results
+            product = next((p for p in st.session_state.search_results if p["product_id"] == product_id), None)
+            if product:
+                try:
+                    price_val = float(''.join(filter(str.isdigit, product["price"].replace('₹', ''))))
+                    total += price_val * qty
+                    cart_items.append(product)
+                    st.markdown(f"{product['name']} - {product['price']} (×{qty})")
+                except:
+                    pass
 
     if not cart_items:
         st.markdown("Your cart is empty.")
