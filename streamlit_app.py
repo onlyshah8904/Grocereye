@@ -1424,6 +1424,9 @@ Analyze the names and answer:
 1. How many types/varieties are there?
 2. What are they based on? (ingredient, brand, flavor, weight, etc.)
 3. List top 5 types with example product names.
+- Use context: "hungry" → ["chips", "biscuits", "snacks"]
+- "potato ki sabji" → ["potato", "onion", "tomato", "ginger", "garlic", "cumin", "turmeric", "oil"]
+- Never invent products.
 
 Be concise and insightful.
 
