@@ -1333,8 +1333,10 @@
 # streamlit_app.py
 # streamlit_app.py
 # streamlit_app.py
+# streamlit_app.py
 import streamlit as st
 import requests
+import json
 import hashlib
 import time
 
@@ -1355,7 +1357,7 @@ if "dark_mode" not in st.session_state:
 # ======================
 # Page Config
 # ======================
-st.set_page_config(page_title="🛒 Grocereye", layout="wide")
+st.set_page_config(page_title="🧠 Grocereye AI", layout="wide")
 
 # Dark Mode
 if st.session_state.dark_mode:
@@ -1367,8 +1369,57 @@ if st.session_state.dark_mode:
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🛒 Grocereye")
-st.markdown("Your grocery assistant")
+st.title("🧠 Grocereye AI")
+st.markdown("Your intelligent grocery assistant")
+
+# ======================
+# Gemini AI: Keyword Extractor
+# ======================
+def extract_keywords(query: str):
+    try:
+        from configs import API_KEY
+        if not API_KEY.strip():
+            return [query]
+
+        instruction = f"""
+You are a shopping intent analyzer. Extract only grocery product keywords.
+Rules:
+- Return ONLY a JSON array of lowercase strings.
+- Use synonyms: "chocolates" → "chocolate", "hungry" → "snacks"
+- Avoid verbs, adjectives.
+
+Input: {query.strip()}
+Output (JSON only):
+"""
+
+        headers = {
+            'Content-Type': 'application/json',
+            'X-goog-api-key': API_KEY,
+        }
+
+        json_data = {
+            "contents": [{"parts": [{"text": instruction}]}],
+            "generationConfig": {
+                "temperature": 0.2,
+                "topP": 0.9,
+                "maxOutputTokens": 100,
+                "responseMimeType": "application/json"
+            }
+        }
+
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+        response = requests.post(url, headers=headers, json=json_data, timeout=30)
+
+        if response.status_code == 200:
+            data = response.json()
+            raw_text = data['candidates'][0]['content']['parts'][0]['text'].strip()
+            keywords = json.loads(raw_text)
+            return [kw.strip().lower() for kw in keywords if kw.strip()]
+        else:
+            return [query]
+    except Exception as e:
+        st.warning(f"AI failed: {e}. Using direct search.")
+        return [query]
 
 # ======================
 # Generate Stable Product ID from URL + Name
@@ -1379,32 +1430,27 @@ def get_product_id(product):
     return hashlib.md5(unique_str.encode()).hexdigest()[:16]
 
 # ======================
-# Direct Search (Only BigBasket via ngrok)
+# Direct Search (via ngrok)
 # ======================
-def search_products(keyword: str, pincode: str):
-    try:
-        resp = requests.get(
-            f"https://28b7c00f2207.ngrok-free.app/search",
-            params={"keyword": keyword, "pincode": pincode, "key": "K8904AI"},
-            timeout=60
-        )
-        if resp.status_code != 200:
-            st.error("❌ Failed to connect to API.")
-            return []
-
-        data = resp.json().get("results", [])
-        results = []
-        for r in data:
-            # Skip invalid products
-            if not r.get("name") or r["name"] == "N/A" or not r.get("price") or r["price"] == "N/A":
-                continue
-            # Assign stable product_id
-            r["product_id"] = get_product_id(r)
-            results.append(r)
-        return results
-    except Exception as e:
-        st.error("❌ Failed to connect to API.")
-        return []
+def search_products(keywords: list, pincode: str):
+    all_results = []
+    for kw in keywords:
+        try:
+            resp = requests.get(
+                f"https://28b7c00f2207.ngrok-free.app/search",
+                params={"keyword": kw, "pincode": pincode, "key": "K8904AI"},
+                timeout=60
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                for r in data.get("results", []):
+                    if r.get("name") and r["name"] != "N/A" and r.get("price") and r["price"] != "N/A":
+                        r["product_id"] = get_product_id(r)
+                        all_results.append(r)
+        except Exception as e:
+            st.error(f"Search failed for '{kw}': {str(e)}")
+            continue
+    return all_results
 
 # ======================
 # Show Product Grid with Add to Cart
@@ -1425,9 +1471,8 @@ def show_product_grid(products):
             with cols[j]:
                 p = products[idx]
 
-                # ✅ Skip if product_id missing
                 if "product_id" not in p:
-                    st.markdown("⚠️ Invalid product")
+                    # Skip invalid products
                     continue
 
                 if p.get("image_url"):
@@ -1443,12 +1488,15 @@ def show_product_grid(products):
                 source = p["source"].split()[0]
                 st.markdown(f"[View on {source} 🛒]({p['url']})", unsafe_allow_html=True)
 
-                # ✅ Unique button key using product_id + time
+                # ✅ Use product_id for cart check
                 product_id = p["product_id"]
-                unique_key = f"add_cart_{product_id}_{int(time.time() * 1000) % 100000}"
+                in_cart = product_id in st.session_state.cart
 
-                if st.button("🛒 Add to Cart", key=unique_key):
-                    if product_id not in st.session_state.cart:
+                # ✅ Unique button key using time to prevent collision
+                add_key = f"add_cart_{product_id}_{int(time.time() * 1000) % 100000}"
+
+                if st.button("🛒 Add to Cart", key=add_key):
+                    if not in_cart:
                         st.session_state.cart[product_id] = p
                         st.success(f"✅ {p['name']} added!")
                     else:
@@ -1493,9 +1541,9 @@ with st.sidebar:
     # ✅ Cart with Remove
     st.markdown("---")
     st.header("🛒 Your Cart")
-    if isinstance(st.session_state.cart, dict) and st.session_state.cart:
+    if st.session_state.cart:
         total = 0
-        cart_items = list(st.session_state.cart.items())  # Safe copy
+        cart_items = list(st.session_state.cart.items())
         for product_id, p in cart_items:
             try:
                 price_val = float(''.join(filter(str.isdigit, p["price"].replace('₹', ''))))
@@ -1503,7 +1551,8 @@ with st.sidebar:
                 st.markdown(f"{p['name']} - {p['price']}")
 
                 # ✅ Unique remove key
-                if st.button("🗑️ Remove", key=f"remove_{product_id}_{int(time.time() * 1000) % 100000}"):
+                remove_key = f"remove_{product_id}_{int(time.time() * 1000) % 100000}"
+                if st.button("🗑️ Remove", key=remove_key):
                     if product_id in st.session_state.cart:
                         del st.session_state.cart[product_id]
                         st.rerun()
@@ -1561,12 +1610,16 @@ if prompt := st.chat_input("Ask or search..."):
             st.write(prompt)
 
         with st.chat_message("assistant"):
-            st.write(f"🔍 Searching for: **{prompt}**")
-            results = search_products(prompt, st.session_state.pincode)
+            # Step 1: Use AI to extract keywords
+            keywords = extract_keywords(prompt)
+
+            # Step 2: New search
+            st.write(f"🔍 Searching for: **{', '.join(keywords)}**")
+            results = search_products(keywords, st.session_state.pincode)
             st.session_state.search_results = results
             show_product_grid(results)
             st.session_state.chat_messages.append({
                 "role": "assistant",
-                "content": f"PRODUCTS: Showing results for '{prompt}'"
+                "content": f"PRODUCTS: Showing results for '{', '.join(keywords)}'"
             })
             st.rerun()
