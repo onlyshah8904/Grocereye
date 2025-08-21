@@ -797,6 +797,7 @@
 
 # version 5
 # streamlit_app.py
+# streamlit_app.py
 import streamlit as st
 import requests
 import json
@@ -809,14 +810,14 @@ if "pincode" not in st.session_state:
 if "chat_messages" not in st.session_state:
     st.session_state.chat_messages = []
 if "search_results" not in st.session_state:
-    st.session_state.search_results = []  # Last fetched products
+    st.session_state.search_results = []
 
 # ======================
 # Page Config
 # ======================
-st.set_page_config(page_title="🛒 Grocereye Chat", layout="wide")
+st.set_page_config(page_title="🛒 Grocereye", layout="wide")
 st.title("🛒 Grocereye")
-st.markdown("Your AI grocery assistant. Start by setting pincode.")
+st.markdown("Your AI-powered grocery assistant")
 
 # ======================
 # Gemini Response Function
@@ -827,20 +828,19 @@ def get_gemini_response(question: str, products: list = None):
 
     # Build context
     if products:
-        product_names = ", ".join([p["name"] for p in products if p.get("name") != "N/A"])
         product_list = "\n".join([
             f"- {p['name']} | {p['price']} | {p.get('quantity', 'N/A')} | {p['source']} | {p['delivery_time']}"
             for p in products[:20]
         ])
     else:
-        product_names = "None"
         product_list = "(No recent products)"
 
     instruction = f"""
 You are Grocereye, a helpful grocery assistant.
 Answer based on the conversation and product list.
 - If asked for 'cheapest', 'fastest', or a brand, use the product list.
-- If the question is new (e.g., 'milk prices'), say you'll search.
+- If the question is new (e.g., 'milk prices'), respond with SEARCH:<keyword>
+- If user wants to change pincode, respond with PINCODE_CHANGE
 - Never invent products.
 - Be concise.
 
@@ -851,8 +851,8 @@ User Question: {question}
 
 Respond with:
 - Answer (if can answer from context), OR
-- SEARCH:<keyword> (if needs fresh search)
-- PINCODE_CHANGE (if user wants to change pincode)
+- SEARCH:<keyword>
+- PINCODE_CHANGE
 """
 
     headers = {
@@ -884,22 +884,20 @@ def search_products(keywords: list, pincode: str):
     all_results = []
     for kw in keywords:
         try:
+            # 🔥 Use your ngrok URL instead of localhost
             resp = requests.get(
-                f"http://localhost:5000/search?keyword={kw}&pincode={pincode}"
+                f"https://28b7c00f2207.ngrok-free.app/search",
+                params={"keyword": kw, "pincode": pincode, "key": "K8904AI"}
             )
             if resp.status_code == 200:
                 data = resp.json()
                 for r in data["results"]:
                     r["matched_keyword"] = kw
                 all_results.extend(data["results"])
-        except:
-            pass
-
-    # Filter invalid
-    def is_valid(p):
-        return p.get("name") != "N/A" or p.get("image_url")
-    valid = [r for r in all_results if is_valid(r)]
-    return valid
+        except Exception as e:
+            st.error(f"Search failed for '{kw}': {str(e)}")
+            continue
+    return all_results
 
 # ======================
 # Display Product Grid
@@ -928,13 +926,59 @@ def show_product_grid(products):
                 st.markdown(f"[View on {source} 🛒]({p['url']})", unsafe_allow_html=True)
 
 # ======================
-# Chat Interface
+# Sidebar: Pincode & Controls
 # ======================
-# Show chat history
+with st.sidebar:
+    st.header("📍 Delivery Location")
+    
+    # Show current pincode or input
+    if st.session_state.pincode:
+        st.write(f"**Current Pincode:** `{st.session_state.pincode}`")
+        if st.button("🔄 Change Pincode"):
+            st.session_state.pincode = None
+            st.session_state.search_results = []
+            st.session_state.chat_messages = []
+            st.rerun()
+    else:
+        pincode_input = st.text_input("Enter 6-digit pincode:", max_chars=6)
+        if st.button("Set Pincode"):
+            if not pincode_input.isdigit() or len(pincode_input) != 6:
+                st.error("Please enter a valid 6-digit pincode.")
+            else:
+                with st.spinner("Setting location..."):
+                    try:
+                        # 🔥 Use ngrok URL
+                        resp = requests.post(
+                            f"https://28b7c00f2207.ngrok-free.app/init-location",
+                            params={"pincode": pincode_input, "key": "K8904AI"}
+                        )
+                        if resp.status_code == 200:
+                            st.session_state.pincode = pincode_input
+                            st.success(f"✅ Location set!")
+                            st.rerun()
+                        else:
+                            st.error("Failed to set location. Try again.")
+                    except Exception as e:
+                        st.error("Cannot connect to server.")
+
+    st.markdown("---")
+    st.header("💬 Chat History")
+    for msg in st.session_state.chat_messages:
+        role = "👤" if msg["role"] == "user" else "🤖"
+        st.markdown(f"{role} {msg['content'][:50]}...")
+
+    if st.button("🧹 Clear Chat"):
+        st.session_state.chat_messages = []
+        st.session_state.search_results = []
+        st.rerun()
+
+# ======================
+# Chat Interface (Main Area)
+# ======================
+# Display chat messages
 for msg in st.session_state.chat_messages:
     with st.chat_message(msg["role"]):
         if msg["content"].startswith("PRODUCTS:"):
-            # It's a product message
             _, query = msg["content"].split(" | ")
             st.markdown(f"🔍 Showing results for: **{query}**")
             show_product_grid(st.session_state.search_results)
@@ -942,55 +986,31 @@ for msg in st.session_state.chat_messages:
             st.write(msg["content"])
 
 # Chat input
-if prompt := st.chat_input("Set pincode or ask for groceries..."):
-    # Add user message
-    st.session_state.chat_messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.write(prompt)
+if prompt := st.chat_input("Ask for groceries or set pincode..."):
+    if not st.session_state.pincode:
+        st.error("Please set pincode first in the sidebar.")
+    else:
+        # Add user message
+        st.session_state.chat_messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.write(prompt)
 
-    # AI Response
-    with st.chat_message("assistant"):
-        # Pincode logic
-        if not st.session_state.pincode:
-            if "pincode" in prompt:
-                try:
-                    pincode = ''.join(filter(str.isdigit, prompt))
-                    if len(pincode) == 6:
-                        # Try to set
-                        resp = requests.post(f"http://localhost:5000/init-location?pincode={pincode}")
-                        if resp.status_code == 200:
-                            st.session_state.pincode = pincode
-                            msg = f"✅ Pincode set to {pincode}. You can now search for groceries!"
-                        else:
-                            msg = "❌ Failed to set pincode. Try again."
-                    else:
-                        msg = "❌ Please enter a valid 6-digit pincode."
-                except:
-                    msg = "❌ Unable to connect to server."
-            else:
-                msg = "📍 Please set your pincode first. Example: 'My pincode is 380007'"
-        else:
-            # Handle change pincode
-            if "change pincode" in prompt.lower():
-                st.session_state.pincode = None
-                st.session_state.search_results = []
-                st.session_state.chat_messages = st.session_state.chat_messages[:-1]  # Remove last user msg
-                st.rerun()
-
-            # Get AI decision
+        # AI Response
+        with st.chat_message("assistant"):
             ai_response = get_gemini_response(prompt, st.session_state.search_results)
 
             if ai_response.startswith("SEARCH:"):
                 keyword = ai_response.replace("SEARCH:", "").strip()
                 with st.spinner(f"Searching for '{keyword}'..."):
-                    keywords = [keyword]
-                    # Or call /keywords to expand
+                    # Expand keyword with Gemini
                     try:
-                        kw_resp = requests.get(f"http://localhost:5000/keywords?query={keyword}")
-                        if kw_resp.status_code == 200:
-                            keywords = kw_resp.json().get("keywords", [keyword])
+                        kw_resp = requests.get(
+                            f"https://28b7c00f2207.ngrok-free.app/keywords?query={keyword}",
+                            params={"query": keyword}
+                        )
+                        keywords = kw_resp.json().get("keywords", [keyword]) if kw_resp.status_code == 200 else [keyword]
                     except:
-                        pass
+                        keywords = [keyword]
 
                     results = search_products(keywords, st.session_state.pincode)
                     st.session_state.search_results = results
@@ -1007,21 +1027,7 @@ if prompt := st.chat_input("Set pincode or ask for groceries..."):
                 st.session_state.chat_messages = st.session_state.chat_messages[:-1]
                 st.rerun()
             else:
+                st.write(ai_response)
                 msg = ai_response
 
-        # Show message
-        if msg.startswith("PRODUCTS:"):
-            st.markdown(msg.replace("PRODUCTS:", "").strip())
-        else:
-            st.write(msg)
-        st.session_state.chat_messages.append({"role": "assistant", "content": msg})
-
-# Sidebar: Clear or change
-with st.sidebar:
-    st.header("⚙️ Settings")
-    if st.button("🧹 Clear Chat"):
-        st.session_state.chat_messages = []
-        st.session_state.search_results = []
-        st.rerun()
-    st.write(f"📍 Current Pincode: `{st.session_state.pincode}`")
-    st.caption("Type 'change pincode' to update.")
+            st.session_state.chat_messages.append({"role": "assistant", "content": msg})
