@@ -1336,7 +1336,7 @@ import requests
 import time
 
 # ======================
-# Session State Initialization (Critical)
+# Session State Initialization
 # ======================
 if "pincode" not in st.session_state:
     st.session_state.pincode = None
@@ -1360,7 +1360,7 @@ if st.session_state.dark_mode:
     <style>
         body { color: #eee; background: #111; }
         .stApp { background: #111; }
-        .cart-item { padding: 8px; margin: 4px 0; }
+        .cart-item { padding: 8px; margin: 4px 0; border-bottom: 1px solid #444; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -1368,29 +1368,78 @@ st.title("🛒 Grocereye")
 st.markdown("Your AI-powered grocery assistant")
 
 # ======================
-# Search Function
+# Gemini Intent Extractor
 # ======================
-def search_products(keyword: str, pincode: str):
+def extract_keywords(query: str):
     try:
-        resp = requests.get(
-            f"https://28b7c00f2207.ngrok-free.app/search",
-            params={"keyword": keyword, "pincode": pincode, "key": "K8904AI"},
-            timeout=60
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            results = []
-            for r in data.get("results", []):
-                if r.get("name") and r["name"] != "N/A" and r.get("price") and r["price"] != "N/A":
-                    results.append(r)
-            return results
-        return []
-    except Exception as e:
-        st.error(f"Search failed: {str(e)}")
-        return []
+        from configs import API_KEY
+        if not API_KEY.strip():
+            return [query]  # fallback
+
+        instruction = f"""
+You are a shopping intent analyzer. Extract only grocery keywords.
+Rules:
+- Return ONLY a JSON array of lowercase strings.
+- Use synonyms: "hungry" → "snacks", "thirsty" → "juice"
+- Avoid verbs, adjectives.
+
+Input: {query.strip()}
+Output (JSON only):
+"""
+
+        headers = {
+            'Content-Type': 'application/json',
+            'X-goog-api-key': API_KEY,
+        }
+
+        json_data = {
+            "contents": [{"parts": [{"text": instruction}]}],
+            "generationConfig": {
+                "temperature": 0.2,
+                "topP": 0.9,
+                "maxOutputTokens": 100,
+                "responseMimeType": "application/json"
+            }
+        }
+
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+        response = requests.post(url, headers=headers, json=json_data, timeout=30)
+
+        if response.status_code == 200:
+            data = response.json()
+            raw_text = data['candidates'][0]['content']['parts'][0]['text'].strip()
+            keywords = json.loads(raw_text)
+            return [kw.strip().lower() for kw in keywords if kw.strip()]
+        else:
+            return [query]
+    except:
+        return [query]
 
 # ======================
-# Show Product Grid
+# Search Function (Blinkit + BigBasket via ngrok)
+# ======================
+def search_products(keywords: list, pincode: str):
+    all_results = []
+    for kw in keywords:
+        try:
+            resp = requests.get(
+                f"https://28b7c00f2207.ngrok-free.app/search",
+                params={"keyword": kw, "pincode": pincode, "key": "K8904AI"},
+                timeout=60
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                for r in data.get("results", []):
+                    if r.get("name") and r["name"] != "N/A" and r.get("price") and r["price"] != "N/A":
+                        r["matched_keyword"] = kw
+                        all_results.append(r)
+        except Exception as e:
+            st.warning(f"Search failed for '{kw}': {str(e)}")
+            continue
+    return all_results
+
+# ======================
+# Show Product Grid with Add to Cart
 # ======================
 def show_product_grid(products):
     if not products:
@@ -1420,14 +1469,14 @@ def show_product_grid(products):
                 source = p["source"].split()[0]
                 st.markdown(f"[View on {source} 🛒]({p['url']})", unsafe_allow_html=True)
 
-                # ✅ Stable, unique key using product identity
-                item_key = f"cart_add_{hash(p['name'] + p['price'] + p['source']) % 1000000}"
+                # ✅ Unique key: includes index, time, and product identity
+                unique_key = f"add_cart_{idx}_{int(time.time() * 1000)}_{abs(hash(p['name'] + p['price'])) % 10000}"
 
-                if st.button("🛒 Add to Cart", key=item_key):
+                if st.button("🛒 Add to Cart", key=unique_key):
                     if p not in st.session_state.cart:
                         st.session_state.cart.append(p)
                         st.success(f"✅ {p['name']} added!")
-                    st.rerun()  # ✅ Force refresh to update cart
+                    st.rerun()
 
 # ======================
 # Sidebar: Pincode & Cart
@@ -1477,8 +1526,8 @@ with st.sidebar:
     for msg in st.session_state.chat_messages:
         role = "👤" if msg["role"] == "user" else "🤖"
         content = msg["content"]
-        if len(content) > 30:
-            content = content[:30] + "..."
+        if len(content) > 40:
+            content = content[:40] + "..."
         st.markdown(f"{role} {content}")
 
     if st.button("🧹 Clear Chat"):
@@ -1499,11 +1548,8 @@ with st.sidebar:
 for msg in st.session_state.chat_messages:
     with st.chat_message(msg["role"]):
         content = msg["content"]
-        if content.startswith("PRODUCTS: Showing results for '") or content.startswith("PRODUCTS: Showing results for \""):
-            try:
-                query = content.split("for '")[1].split("'")[0] if "for '" in content else content.split('for "')[1].split('"')[0]
-            except:
-                query = "this search"
+        if content.startswith("PRODUCTS: Showing results for '") or content.startswith('PRODUCTS: Showing results for "'):
+            query = content.split("for '")[1].split("'")[0] if "for '" in content else content.split('for "')[1].split('"')[0]
             st.markdown(f"🔍 Showing results for: **{query}**")
             show_product_grid(st.session_state.search_results)
         else:
@@ -1514,19 +1560,20 @@ if prompt := st.chat_input("Ask or search..."):
     if not st.session_state.pincode:
         st.error("Please set pincode first.")
     else:
-        # Add user message
+        # Add to chat
         st.session_state.chat_messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.write(prompt)
 
-        # AI Response
         with st.chat_message("assistant"):
-            st.write(f"🔍 Searching for: **{prompt}**")
-            results = search_products(prompt, st.session_state.pincode)
-            st.session_state.search_results = results  # ✅ Store in session state
+            st.write("🧠 Understanding your needs...")
+            keywords = extract_keywords(prompt)
+            st.write(f"🔍 Searching for: **{', '.join(keywords)}**")
+            results = search_products(keywords, st.session_state.pincode)
+            st.session_state.search_results = results
             show_product_grid(results)
             st.session_state.chat_messages.append({
                 "role": "assistant",
                 "content": f"PRODUCTS: Showing results for '{prompt}'"
             })
-            st.rerun()  # ✅ Preserve state
+            st.rerun()
