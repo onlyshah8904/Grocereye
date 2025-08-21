@@ -1332,7 +1332,6 @@
 
 # streamlit_app.py
 # streamlit_app.py
-# streamlit_app.py
 import streamlit as st
 import requests
 import json
@@ -1347,8 +1346,8 @@ if "chat_messages" not in st.session_state:
     st.session_state.chat_messages = []
 if "search_results" not in st.session_state:
     st.session_state.search_results = []
-if "cart" not in st.session_state or not isinstance(st.session_state.cart, dict):
-    st.session_state.cart = {}  # {product_id: qty}
+if "cart" not in st.session_state:
+    st.session_state.cart = {}  # {unique_id: product}
 if "dark_mode" not in st.session_state:
     st.session_state.dark_mode = False
 
@@ -1416,8 +1415,7 @@ Output (JSON only):
         else:
             return [query]
     except Exception as e:
-        st.warning(f"AI failed: {e}. Using direct search.")
-        return [query]
+        return [query]  # Fallback to direct search
 
 def ai_chat_response(question: str, products: list):
     try:
@@ -1463,13 +1461,7 @@ Answer:
         else:
             return "I'm having trouble connecting to the AI."
     except Exception as e:
-        return "AI service is temporarily unavailable."
-
-# ======================
-# Generate Stable Product ID
-# ======================
-def get_product_id(product):
-    return f"{product['source']}_{hash(product['name'] + product['price']) % 100000}"
+        return "I'm here to help with grocery searches."
 
 # ======================
 # Direct Search (via ngrok)
@@ -1487,7 +1479,8 @@ def search_products(keywords: list, pincode: str):
                 data = resp.json()
                 for r in data.get("results", []):
                     if r.get("name") and r["name"] != "N/A" and r.get("price") and r["price"] != "N/A":
-                        r["product_id"] = get_product_id(r)
+                        # Assign a truly unique ID
+                        r["unique_id"] = f"{kw}_{hash(r['name'] + r['price']) % 10000}_{int(time.time() * 1000) % 100000}"
                         all_results.append(r)
         except Exception as e:
             st.error(f"Search failed for '{kw}': {str(e)}")
@@ -1525,11 +1518,11 @@ def show_product_grid(products):
                 source = p["source"].split()[0]
                 st.markdown(f"[View on {source} 🛒]({p['url']})", unsafe_allow_html=True)
 
-                # ✅ Add to Cart Button
-                product_id = p["product_id"]
-                if st.button("🛒 Add to Cart", key=f"add_{product_id}"):
-                    if product_id not in st.session_state.cart:
-                        st.session_state.cart[product_id] = 1
+                # ✅ Truly unique key using unique_id
+                add_key = f"add_cart_{p['unique_id']}"
+                if st.button("🛒 Add to Cart", key=add_key):
+                    if p["unique_id"] not in st.session_state.cart:
+                        st.session_state.cart[p["unique_id"]] = p
                         st.success(f"✅ {p['name']} added!")
                     else:
                         st.info("🛒 Already in cart!")
@@ -1570,41 +1563,27 @@ with st.sidebar:
             else:
                 st.error("❌ Enter valid pincode.")
 
-    # ✅ Cart with Remove Option
+    # ✅ Cart with Remove
     st.markdown("---")
     st.header("🛒 Your Cart")
-    cart_items = []
-    total = 0
-    if isinstance(st.session_state.cart, dict) and st.session_state.cart:
-        for product_id, qty in st.session_state.cart.items():
-            product = next((p for p in st.session_state.search_results if p.get("product_id") == product_id), None)
-            if product:
-                try:
-                    price_val = float(''.join(filter(str.isdigit, product["price"].replace('₹', ''))))
-                    total += price_val * qty
-                    cart_items.append(product)
-
-                    # Display cart item
-                    st.markdown(f"""
-                    <div class='cart-item'>
-                        {product['name']} - {product['price']} (×{qty})
-                    </div>
-                    """, unsafe_allow_html=True)
-
-                    # Remove button
-                    if st.button("🗑️ Remove", key=f"remove_{product_id}"):
-                        del st.session_state.cart[product_id]
-                        st.rerun()
-
-                except Exception as e:
-                    continue
-    else:
-        st.markdown("Your cart is empty.")
-
-    if cart_items:
+    if st.session_state.cart:
+        total = 0
+        for uid, p in st.session_state.cart.items():
+            try:
+                price_val = float(''.join(filter(str.isdigit, p["price"].replace('₹', ''))))
+                total += price_val
+                st.markdown(f"{p['name']} - {p['price']}")
+                # Remove button with unique key
+                if st.button("🗑️ Remove", key=f"remove_{uid}"):
+                    del st.session_state.cart[uid]
+                    st.rerun()
+            except:
+                continue
         st.markdown(f"**Total: ₹{total:.2f}**")
         if st.button("📦 Checkout"):
-            st.info(f"✅ Ordered {len(cart_items)} items!")
+            st.info(f"✅ Ordered {len(st.session_state.cart)} items!")
+    else:
+        st.markdown("Your cart is empty.")
 
     # ✅ Chat History
     st.markdown("---")
@@ -1647,7 +1626,6 @@ if prompt := st.chat_input("Ask or search..."):
     if not st.session_state.pincode:
         st.error("Please set pincode first.")
     else:
-        # Add to chat
         st.session_state.chat_messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.write(prompt)
@@ -1657,7 +1635,7 @@ if prompt := st.chat_input("Ask or search..."):
             keywords = extract_keywords(prompt)
 
             # Step 2: If related to previous results, answer from context
-            if any(word in prompt.lower() for word in ["cheapest", "fastest", "amul", "price", "delivery", "in cart"]):
+            if any(word in prompt.lower() for word in ["cheapest", "fastest", "amul", "price", "delivery"]):
                 if st.session_state.search_results:
                     response = ai_chat_response(prompt, st.session_state.search_results)
                     st.write(response)
