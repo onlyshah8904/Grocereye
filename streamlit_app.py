@@ -1330,6 +1330,7 @@
 
 
 # streamlit_app.py
+# streamlit_app.py
 import streamlit as st
 import requests
 import json
@@ -1452,7 +1453,7 @@ def show_product_grid(products):
                 st.markdown(f"[View on {source} 🛒]({p['url']})", unsafe_allow_html=True)
 
 # ======================
-# Sidebar: Pincode
+# Sidebar: Pincode & Chat History
 # ======================
 with st.sidebar:
     st.header("📍 Delivery Location")
@@ -1528,9 +1529,9 @@ if prompt := st.chat_input("Ask or search..."):
         with st.chat_message("assistant"):
             q = prompt.lower()
 
-            # Step 1: If related to previous results (e.g. "cheapest", "fastest")
+            # If related to previous results
             if st.session_state.search_results:
-                if any(word in q for word in ["cheapest", "lowest price", "fastest", "quickest", "best value", "amul", "price", "delivery"]):
+                if any(word in q for word in ["cheapest", "fastest", "amul", "price", "delivery", "value", "best", "compare"]):
                     context = "Recent Products:\n" + json.dumps([
                         {"name": p["name"], "price": p["price"], "mrp": p.get("mrp"), "delivery_time": p["delivery_time"]}
                         for p in st.session_state.search_results[:20]
@@ -1539,7 +1540,7 @@ if prompt := st.chat_input("Ask or search..."):
                     st.write(response)
                     st.session_state.chat_messages.append({"role": "assistant", "content": response})
                 else:
-                    # Step 2: New search
+                    # New search
                     st.write(f"🔍 Searching for: **{prompt}**")
                     keywords = extract_keywords(prompt)
                     results = search_products(keywords, st.session_state.pincode)
@@ -1550,7 +1551,7 @@ if prompt := st.chat_input("Ask or search..."):
                         "content": f"PRODUCTS: Showing results for '{prompt}'"
                     })
             else:
-                # Step 3: First search
+                # First search
                 st.write(f"🔍 Searching for: **{prompt}**")
                 keywords = extract_keywords(prompt)
                 results = search_products(keywords, st.session_state.pincode)
