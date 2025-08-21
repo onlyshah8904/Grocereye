@@ -1333,6 +1333,7 @@
 # streamlit_app.py
 import streamlit as st
 import requests
+import json
 import time
 
 # ======================
@@ -1352,7 +1353,7 @@ if "dark_mode" not in st.session_state:
 # ======================
 # Page Config
 # ======================
-st.set_page_config(page_title="🛒 Grocereye", layout="wide")
+st.set_page_config(page_title="🧠 Grocereye AI", layout="wide")
 
 # Dark Mode
 if st.session_state.dark_mode:
@@ -1364,36 +1365,126 @@ if st.session_state.dark_mode:
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🛒 Grocereye")
-st.markdown("Your grocery assistant")
+st.title("🧠 Grocereye AI")
+st.markdown("Your intelligent grocery assistant")
 
 # ======================
-# Direct Search (Only BigBasket via ngrok)
+# Gemini AI: Keyword Extractor & Chat
 # ======================
-def search_products(keyword: str, pincode: str):
+def extract_keywords(query: str):
     try:
-        resp = requests.get(
-            f"https://28b7c00f2207.ngrok-free.app/search",
-            params={"keyword": keyword, "pincode": pincode, "key": "K8904AI"},
-            timeout=60
-        )
-        if resp.status_code != 200:
-            return []
+        from configs import API_KEY
+        if not API_KEY.strip():
+            return [query]
 
-        data = resp.json().get("results", [])
-        results = []
-        for r in 
-            # Only include valid BigBasket results
-            if (
-                r.get("source") == "BigBasket" and
-                r.get("name") and r["name"] != "N/A" and
-                r.get("price") and r["price"] != "N/A"
-            ):
-                results.append(r)
-        return results
+        instruction = f"""
+You are a shopping intent analyzer. Extract only grocery product keywords.
+Rules:
+- Return ONLY a JSON array of lowercase strings.
+- Use synonyms: "chocolates" → "chocolate", "hungry" → "snacks"
+- Avoid verbs, adjectives.
+
+Input: {query.strip()}
+Output (JSON only):
+"""
+
+        headers = {
+            'Content-Type': 'application/json',
+            'X-goog-api-key': API_KEY,
+        }
+
+        json_data = {
+            "contents": [{"parts": [{"text": instruction}]}],
+            "generationConfig": {
+                "temperature": 0.2,
+                "topP": 0.9,
+                "maxOutputTokens": 100,
+                "responseMimeType": "application/json"
+            }
+        }
+
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+        response = requests.post(url, headers=headers, json=json_data, timeout=30)
+
+        if response.status_code == 200:
+            data = response.json()
+            raw_text = data['candidates'][0]['content']['parts'][0]['text'].strip()
+            keywords = json.loads(raw_text)
+            return [kw.strip().lower() for kw in keywords if kw.strip()]
+        else:
+            return [query]
     except Exception as e:
-        st.error("❌ Failed to connect to API.")
-        return []
+        st.warning(f"AI failed: {e}. Using direct search.")
+        return [query]
+
+def ai_chat_response(question: str, products: list):
+    try:
+        from configs import API_KEY
+        context = json.dumps([
+            {"name": p["name"], "price": p["price"], "mrp": p.get("mrp", "N/A"), "source": p["source"], "delivery_time": p["delivery_time"]}
+            for p in products[:20]
+        ], indent=2) if products else "(No products)"
+
+        instruction = f"""
+You are Grocereye AI, a smart grocery assistant.
+Answer based on the product list below.
+
+Recent Products:
+{context}
+
+User Question: {question}
+
+Rules:
+- If asked for 'cheapest', find lowest price.
+- If 'fastest delivery', find shortest delivery time.
+- If 'Amul', filter by name.
+- Never invent products.
+- Be concise.
+
+Answer:
+"""
+
+        headers = {
+            'Content-Type': 'application/json',
+            'X-goog-api-key': API_KEY,
+        }
+
+        json_data = {
+            "contents": [{"parts": [{"text": instruction}]}],
+            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 300}
+        }
+
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+        response = requests.post(url, headers=headers, json=json_data, timeout=30)
+        if response.status_code == 200:
+            return response.json()['candidates'][0]['content']['parts'][0]['text'].strip()
+        else:
+            return "I'm having trouble connecting to the AI."
+    except Exception as e:
+        return "AI service is temporarily unavailable."
+
+# ======================
+# Direct Search (via ngrok)
+# ======================
+def search_products(keywords: list, pincode: str):
+    all_results = []
+    for kw in keywords:
+        try:
+            resp = requests.get(
+                f"https://28b7c00f2207.ngrok-free.app/search",
+                params={"keyword": kw, "pincode": pincode, "key": "K8904AI"},
+                timeout=60
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                for r in data.get("results", []):
+                    if r.get("name") and r["name"] != "N/A" and r.get("price") and r["price"] != "N/A":
+                        r["matched_keyword"] = kw
+                        all_results.append(r)
+        except Exception as e:
+            st.error(f"Search failed for '{kw}': {str(e)}")
+            continue
+    return all_results
 
 # ======================
 # Show Product Grid with Add to Cart
@@ -1426,9 +1517,8 @@ def show_product_grid(products):
                 source = p["source"].split()[0]
                 st.markdown(f"[View on {source} 🛒]({p['url']})", unsafe_allow_html=True)
 
-                # ✅ Unique key: uses product identity + time
-                unique_key = f"add_cart_{hash(p['name'] + p['price']) % 100000}_{int(time.time() * 1000) % 100000}"
-
+                # ✅ Unique key: uses time + hash + index
+                unique_key = f"add_cart_{idx}_{int(time.time() * 1000)}_{hash(p['name'] + p['price']) % 10000}"
                 if st.button("🛒 Add to Cart", key=unique_key):
                     if p not in st.session_state.cart:
                         st.session_state.cart.append(p)
@@ -1536,12 +1626,26 @@ if prompt := st.chat_input("Ask or search..."):
             st.write(prompt)
 
         with st.chat_message("assistant"):
-            st.write(f"🔍 Searching for: **{prompt}**")
-            results = search_products(prompt, st.session_state.pincode)
-            st.session_state.search_results = results
-            show_product_grid(results)
-            st.session_state.chat_messages.append({
-                "role": "assistant",
-                "content": f"PRODUCTS: Showing results for '{prompt}'"
-            })
+            # Step 1: Use AI to extract keywords
+            keywords = extract_keywords(prompt)
+
+            # Step 2: If related to previous results, answer from context
+            if any(word in prompt.lower() for word in ["cheapest", "fastest", "amul", "price", "delivery", "in cart"]):
+                if st.session_state.search_results:
+                    response = ai_chat_response(prompt, st.session_state.search_results)
+                    st.write(response)
+                    st.session_state.chat_messages.append({"role": "assistant", "content": response})
+                else:
+                    st.write("No previous products to analyze.")
+                    st.session_state.chat_messages.append({"role": "assistant", "content": "No previous products to analyze."})
+            else:
+                # Step 3: New search
+                st.write(f"🔍 Searching for: **{', '.join(keywords)}**")
+                results = search_products(keywords, st.session_state.pincode)
+                st.session_state.search_results = results
+                show_product_grid(results)
+                st.session_state.chat_messages.append({
+                    "role": "assistant",
+                    "content": f"PRODUCTS: Showing results for '{', '.join(keywords)}'"
+                })
             st.rerun()
