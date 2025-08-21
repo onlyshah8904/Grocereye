@@ -1332,13 +1332,10 @@
 
 # streamlit_app.py
 # streamlit_app.py
-# streamlit_app.py
-# streamlit_app.py
 import streamlit as st
 import requests
 import json
 import hashlib
-import time
 
 # ======================
 # Session State Initialization
@@ -1365,7 +1362,6 @@ if st.session_state.dark_mode:
     <style>
         body { color: #eee; background: #111; }
         .stApp { background: #111; }
-        .cart-item { padding: 8px; margin: 4px 0; border-bottom: 1px solid #444; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -1373,15 +1369,41 @@ st.title("🧠 Grocereye AI")
 st.markdown("Your intelligent grocery assistant")
 
 # ======================
-# Gemini AI: Keyword Extractor
+# Gemini AI: Extract Keywords & Answer
 # ======================
-def extract_keywords(query: str):
+def gemini_query(prompt: str):
     try:
         from configs import API_KEY
         if not API_KEY.strip():
-            return [query]
+            return {"keywords": [prompt], "error": "No API key"}
 
-        instruction = f"""
+        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+        headers = {
+            "Content-Type": "application/json",
+            "X-goog-api-key": API_KEY,
+        }
+        data = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": 0.2,
+                "topP": 0.9,
+                "maxOutputTokens": 200
+            }
+        }
+        response = requests.post(url, headers=headers, json=data, timeout=30)
+        if response.status_code == 200:
+            text = response.json()['candidates'][0]['content']['parts'][0]['text']
+            return {"response": text, "error": None}
+        else:
+            return {"response": None, "error": f"AI Error: {response.status_code}"}
+    except Exception as e:
+        return {"response": None, "error": str(e)}
+
+# ======================
+# Extract Keywords with Gemini
+# ======================
+def extract_keywords(query: str):
+    instruction = f"""
 You are a shopping intent analyzer. Extract only grocery product keywords.
 Rules:
 - Return ONLY a JSON array of lowercase strings.
@@ -1391,42 +1413,19 @@ Rules:
 Input: {query.strip()}
 Output (JSON only):
 """
-
-        headers = {
-            'Content-Type': 'application/json',
-            'X-goog-api-key': API_KEY,
-        }
-
-        json_data = {
-            "contents": [{"parts": [{"text": instruction}]}],
-            "generationConfig": {
-                "temperature": 0.2,
-                "topP": 0.9,
-                "maxOutputTokens": 100,
-                "responseMimeType": "application/json"
-            }
-        }
-
-        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
-        response = requests.post(url, headers=headers, json=json_data, timeout=30)
-
-        if response.status_code == 200:
-            data = response.json()
-            raw_text = data['candidates'][0]['content']['parts'][0]['text'].strip()
-            keywords = json.loads(raw_text)
-            return [kw.strip().lower() for kw in keywords if kw.strip()]
-        else:
-            return [query]
-    except Exception as e:
-        st.warning(f"AI failed: {e}. Using direct search.")
+    result = gemini_query(instruction)
+    if result["error"]:
+        return [query]
+    try:
+        return json.loads(result["response"])
+    except:
         return [query]
 
 # ======================
-# Generate Stable Product ID from URL + Name
+# Generate Stable Product ID
 # ======================
 def get_product_id(product):
-    """Generate a stable, unique ID using product URL and name"""
-    unique_str = f"{product.get('url', '')}{product['name']}"
+    unique_str = f"{product['url']}{product['name']}"
     return hashlib.md5(unique_str.encode()).hexdigest()[:16]
 
 # ======================
@@ -1470,11 +1469,8 @@ def show_product_grid(products):
                 break
             with cols[j]:
                 p = products[idx]
-
                 if "product_id" not in p:
-                    # Skip invalid products
                     continue
-
                 if p.get("image_url"):
                     st.image(p["image_url"], width=100)
                 st.markdown(f"**{p['name']}**")
@@ -1488,14 +1484,10 @@ def show_product_grid(products):
                 source = p["source"].split()[0]
                 st.markdown(f"[View on {source} 🛒]({p['url']})", unsafe_allow_html=True)
 
-                # ✅ Use product_id for cart check
+                # ✅ Add to Cart
                 product_id = p["product_id"]
                 in_cart = product_id in st.session_state.cart
-
-                # ✅ Unique button key using time to prevent collision
-                add_key = f"add_cart_{product_id}_{int(time.time() * 1000) % 100000}"
-
-                if st.button("🛒 Add to Cart", key=add_key):
+                if st.button("🛒 Add to Cart", key=f"add_{product_id}"):
                     if not in_cart:
                         st.session_state.cart[product_id] = p
                         st.success(f"✅ {p['name']} added!")
@@ -1543,24 +1535,17 @@ with st.sidebar:
     st.header("🛒 Your Cart")
     if st.session_state.cart:
         total = 0
-        cart_items = list(st.session_state.cart.items())
-        for product_id, p in cart_items:
+        for product_id, p in list(st.session_state.cart.items()):
             try:
                 price_val = float(''.join(filter(str.isdigit, p["price"].replace('₹', ''))))
                 total += price_val
                 st.markdown(f"{p['name']} - {p['price']}")
-
-                # ✅ Unique remove key
-                remove_key = f"remove_{product_id}_{int(time.time() * 1000) % 100000}"
-                if st.button("🗑️ Remove", key=remove_key):
-                    if product_id in st.session_state.cart:
-                        del st.session_state.cart[product_id]
-                        st.rerun()
-            except Exception as e:
+                if st.button("🗑️ Remove", key=f"remove_{product_id}"):
+                    del st.session_state.cart[product_id]
+                    st.rerun()
+            except:
                 continue
         st.markdown(f"**Total: ₹{total:.2f}**")
-        if st.button("📦 Checkout"):
-            st.info(f"✅ Ordered {len(st.session_state.cart)} items!")
     else:
         st.markdown("Your cart is empty.")
 
@@ -1610,16 +1595,26 @@ if prompt := st.chat_input("Ask or search..."):
             st.write(prompt)
 
         with st.chat_message("assistant"):
-            # Step 1: Use AI to extract keywords
+            # Step 1: Use Gemini to extract keywords
             keywords = extract_keywords(prompt)
 
-            # Step 2: New search
-            st.write(f"🔍 Searching for: **{', '.join(keywords)}**")
-            results = search_products(keywords, st.session_state.pincode)
-            st.session_state.search_results = results
-            show_product_grid(results)
-            st.session_state.chat_messages.append({
-                "role": "assistant",
-                "content": f"PRODUCTS: Showing results for '{', '.join(keywords)}'"
-            })
+            # Step 2: If related to previous results, answer from context
+            if any(word in prompt.lower() for word in ["cheapest", "fastest", "amul", "price", "delivery"]):
+                if st.session_state.search_results:
+                    response = gemini_query(f"Based on these products: {json.dumps(st.session_state.search_results[:10])}, answer: {prompt}")
+                    st.write(response["response"] or "I can help with grocery searches.")
+                    st.session_state.chat_messages.append({"role": "assistant", "content": response["response"]})
+                else:
+                    st.write("No previous products to analyze.")
+                    st.session_state.chat_messages.append({"role": "assistant", "content": "No previous products to analyze."})
+            else:
+                # Step 3: New search
+                st.write(f"🔍 Searching for: **{', '.join(keywords)}**")
+                results = search_products(keywords, st.session_state.pincode)
+                st.session_state.search_results = results
+                show_product_grid(results)
+                st.session_state.chat_messages.append({
+                    "role": "assistant",
+                    "content": f"PRODUCTS: Showing results for '{', '.join(keywords)}'"
+                })
             st.rerun()
