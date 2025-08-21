@@ -578,26 +578,239 @@
 
 # streamlit_app.py
 # streamlit_app.py
+# import streamlit as st
+# import requests
+# import json
+
+# # ======================
+# # Session State Initialization
+# # ======================
+# if "pincode" not in st.session_state:
+#     st.session_state.pincode = None
+# if "search_results" not in st.session_state:
+#     st.session_state.search_results = []
+# if "chat_messages" not in st.session_state:
+#     st.session_state.chat_messages = []
+# if "last_query" not in st.session_state:
+#     st.session_state.last_query = ""
+
+# # ======================
+# # Page Config
+# # ======================
+# st.set_page_config(page_title="🛒 Grocereye", layout="wide")
+# st.title("🛒 Grocereye")
+# st.markdown("Your AI-powered grocery assistant")
+
+# # ======================
+# # Gemini AI Response Function
+# # ======================
+# def get_gemini_response(question: str, products: list):
+#     from configs import API_KEY
+#     import requests as http_requests
+
+#     # Build context
+#     if products:
+#         product_context = "\n".join([
+#             f"- {p['name']} | {p['price']} | {p.get('quantity', 'N/A')} | {p['source']} | {p['delivery_time']}"
+#             for p in products
+#         ])
+#     else:
+#         product_context = "(No recent products)"
+
+#     instruction = f"""
+# You are Grocereye, a helpful grocery assistant.
+# Answer based on the products below. Be concise.
+# also tell about calories and any other thing about any product if asked
+
+# Recent Products:
+# {product_context}
+
+# User Question: {question}
+
+# Rules:
+# - For 'cheapest', find lowest price.
+# - For 'fastest delivery', check delivery_time.
+# - For brands like 'Amul', filter by name.
+# - For suggestions, recommend 3-5 real grocery items.
+# - Never invent products.
+# """
+
+#     headers = {
+#         'Content-Type': 'application/json',
+#         'X-goog-api-key': API_KEY,
+#     }
+
+#     json_data = {
+#         "contents": [{"parts": [{"text": instruction}]}],
+#         "generationConfig": {"temperature": 0.4, "maxOutputTokens": 300}
+#     }
+
+#     url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+
+#     try:
+#         response = http_requests.post(url, headers=headers, json=json_data)
+#         if response.status_code == 200:
+#             data = response.json()
+#             return data['candidates'][0]['content']['parts'][0]['text'].strip()
+#         else:
+#             return "I'm having trouble connecting to the AI."
+#     except Exception as e:
+#         return "Sorry, I can't reach the AI right now."
+
+# # ======================
+# # Sidebar: Chat (Persistent)
+# # ======================
+# with st.sidebar:
+#     st.header("💬 Grocery Assistant")
+#     st.caption("Ask about products or get suggestions!")
+
+#     # Display chat messages
+#     for msg in st.session_state.chat_messages:
+#         with st.chat_message(msg["role"]):
+#             st.write(msg["content"])
+
+#     # Chat input
+#     if prompt := st.chat_input("Ask about groceries..."):
+#         # Add user message
+#         st.session_state.chat_messages.append({"role": "user", "content": prompt})
+
+#         # Show instantly
+#         with st.chat_message("user"):
+#             st.write(prompt)
+
+#         # Get AI response
+#         with st.chat_message("assistant"):
+#             with st.spinner("Thinking..."):
+#                 response = get_gemini_response(prompt, st.session_state.search_results)
+#                 st.write(response)
+#                 st.session_state.chat_messages.append({"role": "assistant", "content": response})
+
+#     # Clear chat
+#     if st.button("🗑️ Clear Chat"):
+#         st.session_state.chat_messages = []
+#         st.rerun()
+
+# # ======================
+# # Main: Pincode & Search
+# # ======================
+
+# # Step 1: Set Pincode
+# if not st.session_state.pincode:
+#     st.subheader("📍 Set Your Delivery Location")
+#     pincode_input = st.text_input("Enter your pincode:", placeholder="e.g., 380007")
+#     if st.button("Set Location"):
+#         if not pincode_input.strip():
+#             st.error("Pincode is required")
+#         else:
+#             with st.spinner("Setting location..."):
+#                 try:
+#                     resp = requests.post(f"https://28b7c00f2207.ngrok-free.app/init-location?pincode={pincode_input}")
+#                     if resp.status_code == 200:
+#                         st.session_state.pincode = pincode_input
+#                         st.success(f"✅ Location set: {pincode_input}")
+#                         st.rerun()
+#                     else:
+#                         st.error("Failed to set location.")
+#                 except Exception as e:
+#                     print(e)
+#                     st.error("❌ Cannot connect to API. Is `python api.py` running?")
+# else:
+#     st.success(f"📍 Active Pincode: {st.session_state.pincode}")
+#     if st.button("⬅️ Change Pincode"):
+#         st.session_state.pincode = None
+#         st.session_state.search_results = []
+#         st.session_state.chat_messages = []
+#         st.session_state.last_query = ""
+#         st.rerun()
+
+#     st.subheader("🛍️ What do you need?")
+#     user_query = st.text_input("Describe your need:", value=st.session_state.last_query, placeholder="e.g., I want milk and bread")
+
+#     if st.button("🔍 Find Products"):
+#         st.session_state.last_query = user_query
+#         with st.spinner("🧠 Understanding your needs..."):
+#             try:
+#                 # Fetch keywords
+#                 kw_resp = requests.get(f"https://28b7c00f2207.ngrok-free.app/keywords?query={requests.utils.quote(user_query)}")
+#                 if kw_resp.status_code != 200:
+#                     st.error("Failed to understand your query.")
+#                 else:
+#                     keywords = kw_resp.json().get("keywords", [])
+#                     if not keywords:
+#                         st.info("No relevant products found.")
+#                     else:
+#                         st.markdown(f"**🔍 Searching for:** {', '.join(keywords)}")
+
+#                         all_results = []
+#                         for kw in keywords:
+#                             with st.spinner(f"Searching for '{kw}'..."):
+#                                 search_resp = requests.get(
+#                                     f"https://28b7c00f2207.ngrok-free.app/search?keyword={kw}&pincode={st.session_state.pincode}"
+#                                 )
+#                                 if search_resp.status_code == 200:
+#                                     data = search_resp.json()
+#                                     for r in data["results"]:
+#                                         r["matched_keyword"] = kw
+#                                     all_results.extend(data["results"])
+
+#                         # Filter invalid
+#                         def is_valid_product(p):
+#                             return not (p.get("name") == "N/A" and p.get("price") == "N/A" and not p.get("image_url"))
+#                         valid_results = [r for r in all_results if is_valid_product(r)]
+#                         st.session_state.search_results = valid_results  # ✅ Save to session state
+
+#                         if not valid_results:
+#                             st.info("📭 No valid products found.")
+#                         else:
+#                             st.markdown(f"### 🎉 Found {len(valid_results)} products")
+
+#             except Exception as e:
+#                 st.error(f"Search failed: {str(e)}")
+
+# # ======================
+# # ✅ Always Render Products (Even After Chat)
+# # ======================
+# if st.session_state.search_results:
+#     # Show products in 3-column grid
+#     for i in range(0, len(st.session_state.search_results), 3):
+#         cols = st.columns(3)
+#         for j in range(3):
+#             idx = i + j
+#             if idx >= len(st.session_state.search_results):
+#                 break
+#             with cols[j]:
+#                 product = st.session_state.search_results[idx]
+#                 if product.get("image_url"):
+#                     st.image(product["image_url"], width=100)
+#                 st.markdown(f"**{product['name']}**")
+#                 st.markdown(f"💰 {product['price']}")
+#                 if product.get("mrp") and product["mrp"] != "N/A":
+#                     st.markdown(f"~~{product['mrp']}~~")
+#                 if product.get("quantity") and product["quantity"] != "N/A":
+#                     st.markdown(f"📦 {product['quantity']}")
+#                 if product.get("delivery_time") and product["delivery_time"] != "N/A":
+#                     st.markdown(f"🚚 {product['delivery_time']}")
+#                 source = product["source"].split()[0]
+#                 st.markdown(f"[View on {source} 🛒]({product['url']})", unsafe_allow_html=True)
+
+
+
+# version 5
 import streamlit as st
 import requests
-import json
 
 # ======================
 # Session State Initialization
 # ======================
 if "pincode" not in st.session_state:
     st.session_state.pincode = None
-if "search_results" not in st.session_state:
-    st.session_state.search_results = []
-if "chat_messages" not in st.session_state:
-    st.session_state.chat_messages = []
-if "last_query" not in st.session_state:
-    st.session_state.last_query = ""
+if "messages" not in st.session_state:
+    st.session_state.messages = []  # Each message: {"role": "user|assistant", "content": "...", "products": [...]}
 
 # ======================
 # Page Config
 # ======================
-st.set_page_config(page_title="🛒 Grocereye", layout="wide")
+st.set_page_config(page_title="🛒 Grocereye", layout="centered")
 st.title("🛒 Grocereye")
 st.markdown("Your AI-powered grocery assistant")
 
@@ -620,7 +833,7 @@ def get_gemini_response(question: str, products: list):
     instruction = f"""
 You are Grocereye, a helpful grocery assistant.
 Answer based on the products below. Be concise.
-also tell about calories and any other thing about any product if asked
+Also tell about calories and nutrition if asked.
 
 Recent Products:
 {product_context}
@@ -655,140 +868,153 @@ Rules:
         else:
             return "I'm having trouble connecting to the AI."
     except Exception as e:
-        return "Sorry, I can't reach the AI right now."
+        return f"Sorry, I can't reach the AI right now. Error: {str(e)}"
 
 # ======================
-# Sidebar: Chat (Persistent)
+# Helper: Search Products
 # ======================
-with st.sidebar:
-    st.header("💬 Grocery Assistant")
-    st.caption("Ask about products or get suggestions!")
+def search_products(keywords, pincode):
+    all_results = []
+    try:
+        for kw in keywords:
+            search_resp = requests.get(
+                f"https://28b7c00f2207.ngrok-free.app/search?keyword={requests.utils.quote(kw)}&pincode={pincode}"
+            )
+            if search_resp.status_code == 200:
+                data = search_resp.json()
+                for r in data["results"]:
+                    r["matched_keyword"] = kw
+                all_results.extend(data["results"])
+    except Exception as e:
+        st.error(f"Search failed: {e}")
+    return [r for r in all_results if not (r.get("name") == "N/A" and r.get("price") == "N/A")]
 
-    # Display chat messages
-    for msg in st.session_state.chat_messages:
-        with st.chat_message(msg["role"]):
-            st.write(msg["content"])
+# ======================
+# Helper: Extract Keywords
+# ======================
+def get_keywords(query):
+    try:
+        resp = requests.get(f"https://28b7c00f2207.ngrok-free.app/keywords?query={requests.utils.quote(query)}")
+        if resp.status_code == 200:
+            return resp.json().get("keywords", [])
+        else:
+            return []
+    except:
+        return []
+
+# ======================
+# Chat Interface
+# ======================
+
+# Display messages
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.write(message["content"])
+        # Show products if any
+        if "products" in message and message["products"]:
+            cols = st.columns(3)
+            for i, p in enumerate(message["products"]):
+                with cols[i % 3]:
+                    if p.get("image_url"):
+                        st.image(p["image_url"], width=100)
+                    st.markdown(f"**{p['name']}**")
+                    st.markdown(f"💰 {p['price']}")
+                    if p.get("mrp") and p["mrp"] != "N/A":
+                        st.markdown(f"~~{p['mrp']}~~")
+                    if p.get("quantity") and p["quantity"] != "N/A":
+                        st.markdown(f"📦 {p['quantity']}")
+                    if p.get("delivery_time") and p["delivery_time"] != "N/A":
+                        st.markdown(f"🚚 {p['delivery_time']}")
+                    source = p["source"].split()[0]
+                    st.markdown(f"[View on {source} 🛒]({p['url']})", unsafe_allow_html=True)
+
+# ----------------------
+# Pincode Input (Only if not set)
+# ----------------------
+if not st.session_state.pincode:
+    st.divider()
+    st.subheader("📍 Welcome! Please set your delivery pincode")
+    pincode_input = st.text_input("Enter your pincode:", placeholder="e.g., 380007")
+
+    if st.button("Set Pincode"):
+        if pincode_input.strip():
+            try:
+                resp = requests.post(f"https://28b7c00f2207.ngrok-free.app/init-location?pincode={pincode_input.strip()}")
+                if resp.status_code == 200:
+                    st.session_state.pincode = pincode_input.strip()
+                    st.success(f"✅ Location set: {pincode_input}")
+                    st.rerun()
+                else:
+                    st.error("Failed to set location. Try again.")
+            except Exception as e:
+                st.error("❌ Cannot connect to backend. Is `python api.py` running?")
+        else:
+            st.error("Pincode is required.")
+
+# ----------------------
+# Chat Input (Only if pincode is set)
+# ----------------------
+else:
+    st.divider()
+    st.markdown(f"<div style='text-align: center; font-size: 0.9em; color: gray;'>📍 Active Pincode: {st.session_state.pincode} | <a href='#' onclick='window.location.reload()'>Change</a></div>", unsafe_allow_html=True)
 
     # Chat input
-    if prompt := st.chat_input("Ask about groceries..."):
+    if prompt := st.chat_input("Describe what you need (e.g., milk, bread, Amul butter)...", disabled=False):
         # Add user message
-        st.session_state.chat_messages.append({"role": "user", "content": prompt})
-
-        # Show instantly
+        st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.write(prompt)
 
-        # Get AI response
+        # Process assistant response
         with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                response = get_gemini_response(prompt, st.session_state.search_results)
-                st.write(response)
-                st.session_state.chat_messages.append({"role": "assistant", "content": response})
+            with st.spinner("🧠 Thinking..."):
 
-    # Clear chat
-    if st.button("🗑️ Clear Chat"):
-        st.session_state.chat_messages = []
-        st.rerun()
-
-# ======================
-# Main: Pincode & Search
-# ======================
-
-# Step 1: Set Pincode
-if not st.session_state.pincode:
-    st.subheader("📍 Set Your Delivery Location")
-    pincode_input = st.text_input("Enter your pincode:", placeholder="e.g., 380007")
-    if st.button("Set Location"):
-        if not pincode_input.strip():
-            st.error("Pincode is required")
-        else:
-            with st.spinner("Setting location..."):
-                try:
-                    resp = requests.post(f"https://28b7c00f2207.ngrok-free.app/init-location?pincode={pincode_input}")
-                    if resp.status_code == 200:
-                        st.session_state.pincode = pincode_input
-                        st.success(f"✅ Location set: {pincode_input}")
-                        st.rerun()
-                    else:
-                        st.error("Failed to set location.")
-                except Exception as e:
-                    print(e)
-                    st.error("❌ Cannot connect to API. Is `python api.py` running?")
-else:
-    st.success(f"📍 Active Pincode: {st.session_state.pincode}")
-    if st.button("⬅️ Change Pincode"):
-        st.session_state.pincode = None
-        st.session_state.search_results = []
-        st.session_state.chat_messages = []
-        st.session_state.last_query = ""
-        st.rerun()
-
-    st.subheader("🛍️ What do you need?")
-    user_query = st.text_input("Describe your need:", value=st.session_state.last_query, placeholder="e.g., I want milk and bread")
-
-    if st.button("🔍 Find Products"):
-        st.session_state.last_query = user_query
-        with st.spinner("🧠 Understanding your needs..."):
-            try:
-                # Fetch keywords
-                kw_resp = requests.get(f"https://28b7c00f2207.ngrok-free.app/keywords?query={requests.utils.quote(user_query)}")
-                if kw_resp.status_code != 200:
-                    st.error("Failed to understand your query.")
+                # Step 1: Get keywords
+                keywords = get_keywords(prompt)
+                if not keywords:
+                    response = "I couldn't understand your request. Please try again."
+                    st.write(response)
+                    st.session_state.messages.append({"role": "assistant", "content": response})
                 else:
-                    keywords = kw_resp.json().get("keywords", [])
-                    if not keywords:
-                        st.info("No relevant products found.")
+                    st.markdown(f"🔍 Looking for: *{', '.join(keywords)}*")
+
+                    # Step 2: Search products
+                    products = search_products(keywords, st.session_state.pincode)
+                    if not products:
+                        response = "Sorry, I couldn't find any products matching your request."
+                        st.write(response)
+                        st.session_state.messages.append({"role": "assistant", "content": response})
                     else:
-                        st.markdown(f"**🔍 Searching for:** {', '.join(keywords)}")
+                        # Step 3: Get AI response
+                        ai_response = get_gemini_response(prompt, products)
+                        st.write(ai_response)
 
-                        all_results = []
-                        for kw in keywords:
-                            with st.spinner(f"Searching for '{kw}'..."):
-                                search_resp = requests.get(
-                                    f"https://28b7c00f2207.ngrok-free.app/search?keyword={kw}&pincode={st.session_state.pincode}"
-                                )
-                                if search_resp.status_code == 200:
-                                    data = search_resp.json()
-                                    for r in data["results"]:
-                                        r["matched_keyword"] = kw
-                                    all_results.extend(data["results"])
+                        # Show products
+                        cols = st.columns(3)
+                        for i, p in enumerate(products[:9]):  # Show max 9
+                            with cols[i % 3]:
+                                if p.get("image_url"):
+                                    st.image(p["image_url"], width=100)
+                                st.markdown(f"**{p['name']}**")
+                                st.markdown(f"💰 {p['price']}")
+                                if p.get("mrp") and p["mrp"] != "N/A":
+                                    st.markdown(f"~~{p['mrp']}~~")
+                                if p.get("quantity") and p["quantity"] != "N/A":
+                                    st.markdown(f"📦 {p['quantity']}")
+                                if p.get("delivery_time") and p["delivery_time"] != "N/A":
+                                    st.markdown(f"🚚 {p['delivery_time']}")
+                                source = p["source"].split()[0]
+                                st.markdown(f"[View on {source} 🛒]({p['url']})", unsafe_allow_html=True)
 
-                        # Filter invalid
-                        def is_valid_product(p):
-                            return not (p.get("name") == "N/A" and p.get("price") == "N/A" and not p.get("image_url"))
-                        valid_results = [r for r in all_results if is_valid_product(r)]
-                        st.session_state.search_results = valid_results  # ✅ Save to session state
+                        # Save message with products
+                        st.session_state.messages.append({
+                            "role": "assistant",
+                            "content": ai_response,
+                            "products": products
+                        })
 
-                        if not valid_results:
-                            st.info("📭 No valid products found.")
-                        else:
-                            st.markdown(f"### 🎉 Found {len(valid_results)} products")
-
-            except Exception as e:
-                st.error(f"Search failed: {str(e)}")
-
-# ======================
-# ✅ Always Render Products (Even After Chat)
-# ======================
-if st.session_state.search_results:
-    # Show products in 3-column grid
-    for i in range(0, len(st.session_state.search_results), 3):
-        cols = st.columns(3)
-        for j in range(3):
-            idx = i + j
-            if idx >= len(st.session_state.search_results):
-                break
-            with cols[j]:
-                product = st.session_state.search_results[idx]
-                if product.get("image_url"):
-                    st.image(product["image_url"], width=100)
-                st.markdown(f"**{product['name']}**")
-                st.markdown(f"💰 {product['price']}")
-                if product.get("mrp") and product["mrp"] != "N/A":
-                    st.markdown(f"~~{product['mrp']}~~")
-                if product.get("quantity") and product["quantity"] != "N/A":
-                    st.markdown(f"📦 {product['quantity']}")
-                if product.get("delivery_time") and product["delivery_time"] != "N/A":
-                    st.markdown(f"🚚 {product['delivery_time']}")
-                source = product["source"].split()[0]
-                st.markdown(f"[View on {source} 🛒]({product['url']})", unsafe_allow_html=True)
+    # Optional: Button to change pincode
+    if st.button("🔄 Change Pincode"):
+        st.session_state.pincode = None
+        st.session_state.messages = []
+        st.rerun()
