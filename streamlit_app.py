@@ -1329,13 +1329,10 @@
 
 
 
-
-# streamlit_app.py
 # streamlit_app.py
 import streamlit as st
 import requests
 import json
-import hashlib
 
 # ======================
 # Session State Initialization
@@ -1346,65 +1343,47 @@ if "chat_messages" not in st.session_state:
     st.session_state.chat_messages = []
 if "search_results" not in st.session_state:
     st.session_state.search_results = []
-if "cart" not in st.session_state:
-    st.session_state.cart = {}  # {product_id: product}
-if "dark_mode" not in st.session_state:
-    st.session_state.dark_mode = False
 
 # ======================
 # Page Config
 # ======================
 st.set_page_config(page_title="🧠 Grocereye AI", layout="wide")
-
-# Dark Mode
-if st.session_state.dark_mode:
-    st.markdown("""
-    <style>
-        body { color: #eee; background: #111; }
-        .stApp { background: #111; }
-    </style>
-    """, unsafe_allow_html=True)
-
 st.title("🧠 Grocereye AI")
 st.markdown("Your intelligent grocery assistant")
 
 # ======================
-# Gemini AI: Extract Keywords & Answer
+# Gemini AI: Query with Context
 # ======================
-def gemini_query(prompt: str):
+def gemini_query(prompt: str, context: str = ""):
     try:
         from configs import API_KEY
         if not API_KEY.strip():
-            return {"keywords": [prompt], "error": "No API key"}
+            return "❌ AI not available: No API key."
 
         url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
         headers = {
             "Content-Type": "application/json",
             "X-goog-api-key": API_KEY,
         }
+        full_prompt = f"{context}\n\nUser Question: {prompt}\nAnswer:"
         data = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "temperature": 0.2,
-                "topP": 0.9,
-                "maxOutputTokens": 200
-            }
+            "contents": [{"parts": [{"text": full_prompt}]}],
+            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 200}
         }
         response = requests.post(url, headers=headers, json=data, timeout=30)
         if response.status_code == 200:
-            text = response.json()['candidates'][0]['content']['parts'][0]['text']
-            return {"response": text, "error": None}
+            return response.json()['candidates'][0]['content']['parts'][0]['text'].strip()
         else:
-            return {"response": None, "error": f"AI Error: {response.status_code}"}
+            return f"❌ AI Error: {response.status_code}"
     except Exception as e:
-        return {"response": None, "error": str(e)}
+        return f"❌ AI Failed: {str(e)}"
 
 # ======================
 # Extract Keywords with Gemini
 # ======================
 def extract_keywords(query: str):
     instruction = f"""
-You are a shopping intent analyzer. Extract only grocery product keywords.
+You are a shopping intent analyzer. Extract only grocery keywords.
 Rules:
 - Return ONLY a JSON array of lowercase strings.
 - Use synonyms: "chocolates" → "chocolate", "hungry" → "snacks"
@@ -1414,19 +1393,10 @@ Input: {query.strip()}
 Output (JSON only):
 """
     result = gemini_query(instruction)
-    if result["error"]:
-        return [query]
     try:
-        return json.loads(result["response"])
+        return json.loads(result)
     except:
         return [query]
-
-# ======================
-# Generate Stable Product ID
-# ======================
-def get_product_id(product):
-    unique_str = f"{product['url']}{product['name']}"
-    return hashlib.md5(unique_str.encode()).hexdigest()[:16]
 
 # ======================
 # Direct Search (via ngrok)
@@ -1444,7 +1414,6 @@ def search_products(keywords: list, pincode: str):
                 data = resp.json()
                 for r in data.get("results", []):
                     if r.get("name") and r["name"] != "N/A" and r.get("price") and r["price"] != "N/A":
-                        r["product_id"] = get_product_id(r)
                         all_results.append(r)
         except Exception as e:
             st.error(f"Search failed for '{kw}': {str(e)}")
@@ -1452,7 +1421,7 @@ def search_products(keywords: list, pincode: str):
     return all_results
 
 # ======================
-# Show Product Grid with Add to Cart
+# Show Product Grid
 # ======================
 def show_product_grid(products):
     if not products:
@@ -1469,8 +1438,6 @@ def show_product_grid(products):
                 break
             with cols[j]:
                 p = products[idx]
-                if "product_id" not in p:
-                    continue
                 if p.get("image_url"):
                     st.image(p["image_url"], width=100)
                 st.markdown(f"**{p['name']}**")
@@ -1484,19 +1451,8 @@ def show_product_grid(products):
                 source = p["source"].split()[0]
                 st.markdown(f"[View on {source} 🛒]({p['url']})", unsafe_allow_html=True)
 
-                # ✅ Add to Cart
-                product_id = p["product_id"]
-                in_cart = product_id in st.session_state.cart
-                if st.button("🛒 Add to Cart", key=f"add_{product_id}"):
-                    if not in_cart:
-                        st.session_state.cart[product_id] = p
-                        st.success(f"✅ {p['name']} added!")
-                    else:
-                        st.info("🛒 Already in cart!")
-                    st.rerun()
-
 # ======================
-# Sidebar: Pincode & Cart
+# Sidebar: Pincode
 # ======================
 with st.sidebar:
     st.header("📍 Delivery Location")
@@ -1507,7 +1463,6 @@ with st.sidebar:
             st.session_state.pincode = None
             st.session_state.search_results = []
             st.session_state.chat_messages = []
-            st.session_state.cart = {}
             st.rerun()
     else:
         pincode_input = st.text_input("Enter 6-digit pincode:", max_chars=6)
@@ -1530,26 +1485,7 @@ with st.sidebar:
             else:
                 st.error("❌ Enter valid pincode.")
 
-    # ✅ Cart with Remove
-    st.markdown("---")
-    st.header("🛒 Your Cart")
-    if st.session_state.cart:
-        total = 0
-        for product_id, p in list(st.session_state.cart.items()):
-            try:
-                price_val = float(''.join(filter(str.isdigit, p["price"].replace('₹', ''))))
-                total += price_val
-                st.markdown(f"{p['name']} - {p['price']}")
-                if st.button("🗑️ Remove", key=f"remove_{product_id}"):
-                    del st.session_state.cart[product_id]
-                    st.rerun()
-            except:
-                continue
-        st.markdown(f"**Total: ₹{total:.2f}**")
-    else:
-        st.markdown("Your cart is empty.")
-
-    # ✅ Chat History
+    # Chat History
     st.markdown("---")
     st.header("💬 Chat History")
     for msg in st.session_state.chat_messages:
@@ -1562,12 +1498,6 @@ with st.sidebar:
     if st.button("🧹 Clear Chat"):
         st.session_state.chat_messages = []
         st.session_state.search_results = []
-        st.session_state.cart = {}
-        st.rerun()
-
-    # Dark Mode
-    if st.button("🎨 Toggle Dark Mode"):
-        st.session_state.dark_mode = not st.session_state.dark_mode
         st.rerun()
 
 # ======================
@@ -1590,31 +1520,44 @@ if prompt := st.chat_input("Ask or search..."):
     if not st.session_state.pincode:
         st.error("Please set pincode first.")
     else:
+        # Add to chat
         st.session_state.chat_messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.write(prompt)
 
         with st.chat_message("assistant"):
-            # Step 1: Use Gemini to extract keywords
-            keywords = extract_keywords(prompt)
+            q = prompt.lower()
 
-            # Step 2: If related to previous results, answer from context
-            if any(word in prompt.lower() for word in ["cheapest", "fastest", "amul", "price", "delivery"]):
-                if st.session_state.search_results:
-                    response = gemini_query(f"Based on these products: {json.dumps(st.session_state.search_results[:10])}, answer: {prompt}")
-                    st.write(response["response"] or "I can help with grocery searches.")
-                    st.session_state.chat_messages.append({"role": "assistant", "content": response["response"]})
+            # Step 1: If related to previous results (e.g. "cheapest", "fastest")
+            if st.session_state.search_results:
+                if any(word in q for word in ["cheapest", "lowest price", "fastest", "quickest", "best value", "amul", "price", "delivery"]):
+                    context = "Recent Products:\n" + json.dumps([
+                        {"name": p["name"], "price": p["price"], "mrp": p.get("mrp"), "delivery_time": p["delivery_time"]}
+                        for p in st.session_state.search_results[:20]
+                    ], indent=2)
+                    response = gemini_query(prompt, context)
+                    st.write(response)
+                    st.session_state.chat_messages.append({"role": "assistant", "content": response})
                 else:
-                    st.write("No previous products to analyze.")
-                    st.session_state.chat_messages.append({"role": "assistant", "content": "No previous products to analyze."})
+                    # Step 2: New search
+                    st.write(f"🔍 Searching for: **{prompt}**")
+                    keywords = extract_keywords(prompt)
+                    results = search_products(keywords, st.session_state.pincode)
+                    st.session.search_results = results
+                    show_product_grid(results)
+                    st.session_state.chat_messages.append({
+                        "role": "assistant",
+                        "content": f"PRODUCTS: Showing results for '{prompt}'"
+                    })
             else:
-                # Step 3: New search
-                st.write(f"🔍 Searching for: **{', '.join(keywords)}**")
+                # Step 3: First search
+                st.write(f"🔍 Searching for: **{prompt}**")
+                keywords = extract_keywords(prompt)
                 results = search_products(keywords, st.session_state.pincode)
                 st.session_state.search_results = results
                 show_product_grid(results)
                 st.session_state.chat_messages.append({
                     "role": "assistant",
-                    "content": f"PRODUCTS: Showing results for '{', '.join(keywords)}'"
+                    "content": f"PRODUCTS: Showing results for '{prompt}'"
                 })
-            st.rerun()
+        st.rerun()
