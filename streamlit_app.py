@@ -1331,8 +1331,6 @@
 
 
 # streamlit_app.py
-# streamlit_app.py
-# streamlit_app.py
 import streamlit as st
 import requests
 import time
@@ -1370,7 +1368,7 @@ st.title("🛒 Grocereye")
 st.markdown("Your grocery assistant")
 
 # ======================
-# Search Function (Only BigBasket via ngrok)
+# Direct Search (Only BigBasket via ngrok)
 # ======================
 def search_products(keyword: str, pincode: str):
     try:
@@ -1384,7 +1382,7 @@ def search_products(keyword: str, pincode: str):
 
         data = resp.json().get("results", [])
         results = []
-        for r in data:
+        for r in 
             # Only include valid BigBasket results
             if (
                 r.get("source") == "BigBasket" and
@@ -1428,17 +1426,15 @@ def show_product_grid(products):
                 source = p["source"].split()[0]
                 st.markdown(f"[View on {source} 🛒]({p['url']})", unsafe_allow_html=True)
 
-                # ✅ Unique key: uses time + index + product hash
-                unique_key = f"cart_add_{idx}_{int(time.time() * 1000)}_{hash(p['name']) % 10000}"
+                # ✅ Unique key: uses product identity + time
+                unique_key = f"add_cart_{hash(p['name'] + p['price']) % 100000}_{int(time.time() * 1000) % 100000}"
 
                 if st.button("🛒 Add to Cart", key=unique_key):
-                    # ✅ Only add if not already in cart
                     if p not in st.session_state.cart:
                         st.session_state.cart.append(p)
-                        st.success(f"✅ {p['name']} added to cart!")
+                        st.success(f"✅ {p['name']} added!")
                     else:
                         st.info("🛒 Already in cart!")
-                    # ✅ Force refresh to update cart
                     st.rerun()
 
 # ======================
