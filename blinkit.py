@@ -97,7 +97,7 @@ def search_in_active_session(keyword, pincode):
             params=params,
             cookies=session["cookies"],
             headers={'lat': session["lat"], 'lon': session["lon"]},
-            impersonate="edge110"
+            impersonate="chrome110"
         )
         if resp.status_code != 200:
             return []
