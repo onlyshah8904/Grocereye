@@ -1354,12 +1354,14 @@ st.title("🧠 Grocereye AI")
 st.markdown("Your intelligent grocery assistant")
 
 # ======================
-# Gemini AI: Dynamic Intent Extractor
+# Gemini AI: Dynamic Intent Extractor (with quantity)
 # ======================
 def extract_keywords(query: str):
     """
-    Uses Gemini to extract ONLY grocery search terms.
-    No fallbacks. Fully dynamic.
+    Uses Gemini to extract grocery keywords with quantity context.
+    Fully dynamic. No static lists.
+    Input: "2 kg rice and 1 litre milk", "6 eggs", "I am hungry"
+    Output: ["rice", "milk", "eggs", "chips"]
     """
     try:
         from configs import API_KEY
@@ -1368,17 +1370,17 @@ def extract_keywords(query: str):
 
         instruction = f"""
 You are Grocereye AI, a smart grocery assistant.
-Your job is to extract the core grocery search intent from the user's input.
+Analyze the user's input and extract ONLY the core grocery product names.
 Rules:
-- Return ONLY a JSON array of 1-3 grocery keywords.
-- For "I am hungry", suggest snacks: ["chips", "biscuits", "nuts"]
-- For recipes like "potato ki sabji", extract ingredients: ["potato", "onion", "tomato", "ginger", "garlic", "oil", "cumin", "turmeric"]
-- For "thirsty", return drinks: ["water", "juice", "cold drinks"]
-- For "dinner", return: ["rice", "dal", "roti", "vegetables"]
-- Never return verbs, adjectives, or full sentences.
+- Return ONLY a JSON array of lowercase product names (no brands, no quantities).
+- Preserve intent: "2 kg rice" → ["rice"], "6 eggs" → ["eggs"]
+- "I am hungry" → suggest: ["chips", "biscuits", "nuts", "chocolates"]
+- "potato ki sabji" → extract ingredients: ["potato", "onion", "tomato", "ginger", "garlic", "oil", "cumin", "turmeric"]
+- "dinner" → ["rice", "dal", "roti", "vegetables"]
+- Never include verbs, adjectives, or full sentences.
 - Be concise.
 
-Input: {query.strip()}
+User Input: {query.strip()}
 Output (JSON only):
 """
 
@@ -1404,10 +1406,10 @@ Output (JSON only):
             data = response.json()
             raw_text = data['candidates'][0]['content']['parts'][0]['text'].strip()
             keywords = json.loads(raw_text)
-            # Ensure list of strings
+            # Ensure clean list of strings
             return [kw.strip().lower() for kw in keywords if isinstance(kw, str) and kw.strip()]
         else:
-            # If AI fails, let user query pass through
+            # Fallback: use query as keyword
             return [query]
     except Exception as e:
         return [query]
@@ -1549,7 +1551,7 @@ if prompt := st.chat_input("Ask or search..."):
                         {"name": p["name"], "price": p["price"], "mrp": p.get("mrp"), "delivery_time": p["delivery_time"]}
                         for p in st.session_state.search_results[:20]
                     ], indent=2)
-                    # Let Gemini answer from context
+                    # Ask Gemini to answer from context
                     try:
                         from configs import API_KEY
                         headers = {
