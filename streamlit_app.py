@@ -1557,12 +1557,6 @@ with st.sidebar:
     else:
         st.markdown("Your cart is empty.")
 
-    # Dark Mode
-    st.markdown("---")
-    if st.button("🎨 Toggle Dark Mode"):
-        st.session_state.dark_mode = not st.session_state.dark_mode
-        st.rerun()
-
     # Chat history
     st.header("💬 Chat History")
     for msg in st.session_state.chat_messages[-10:]:
