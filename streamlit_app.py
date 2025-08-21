@@ -1369,8 +1369,7 @@ def gemini_query(prompt: str):
             'X-goog-api-key': API_KEY,
         }
         data = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 200}
+            "contents": [{"parts": [{"text": prompt}]}]
         }
         response = requests.post(url, headers=headers, json=data, timeout=30)
         if response.status_code == 200:
@@ -1394,6 +1393,8 @@ Rules:
 - "need ingredients for tea" → ["tea powder", "sugar", "milk", "cardamom"]
 - Never include verbs, adjectives, or brands.
 - Be concise.
+
+- RETURN ONLY KEYWORDS LIKE ["chips", "biscuits", "chocolates", "nuts"]
 
 Input: {query.strip()}
 Output (JSON only):
