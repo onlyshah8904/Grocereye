@@ -1331,6 +1331,7 @@
 
 
 # streamlit_app.py
+# streamlit_app.py
 import streamlit as st
 import requests
 import json
@@ -1354,14 +1355,15 @@ if "dark_mode" not in st.session_state:
 # ======================
 st.set_page_config(page_title="🛒 Grocereye", layout="wide")
 
-# Dynamic theme
+# Dynamic Dark Mode Styling
 if st.session_state.dark_mode:
     st.markdown("""
     <style>
-        body { color: #eee; background: #1e1e1e; }
-        .stApp { background: #1e1e1e; }
+        body { color: #eee; background-color: #1e1e1e; }
+        .stApp { background-color: #1e1e1e; }
         .css-1d391kg { color: #eee; }
-        .cart-item { margin: 8px 0; padding: 8px; border-bottom: 1px solid #444; }
+        .cart-item { padding: 10px; margin: 8px 0; border-bottom: 1px solid #444; }
+        .product-card { background: #2d2d2d; padding: 10px; border-radius: 8px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -1379,6 +1381,7 @@ def get_gemini_response(question: str, products: list = None):
     except:
         return "❌ API Key not found. Check configs.py"
 
+    # Build product context
     if products:
         product_list = "\n".join([
             f"- {p['name']} | {p['price']} | {p.get('quantity', 'N/A')} | {p['source']} | {p['delivery_time']}"
@@ -1427,7 +1430,7 @@ Rules:
         return "❌ Cannot connect to Gemini AI. Check your internet and API key."
 
 # ======================
-# Product Search Function
+# Product Search Function (Uses ngrok)
 # ======================
 def search_products(keywords: list, pincode: str):
     all_results = []
@@ -1489,15 +1492,17 @@ def show_product_grid(products):
                 source = p["source"].split()[0]
                 st.markdown(f"[View on {source} 🛒]({p['url']})", unsafe_allow_html=True)
 
-                # Add to Cart Button
-                if st.button(f"🛒 Add to Cart", key=f"add_{p['source']}_{p['name']}_{idx}"):
+                # Add to Cart Button with Unique Key
+                item_key = f"{p['name']}_{p['price']}_{p['source']}"
+                if st.button("🛒 Add to Cart", key=f"add_{item_key}_{idx}"):
                     st.session_state.cart.append(p)
                     st.success(f"✅ {p['name']} added!")
+                    st.rerun()  # Force refresh to show in cart
 
     return valid_products
 
 # ======================
-# Sidebar: Pincode & Controls
+# Sidebar: Pincode & Cart
 # ======================
 with st.sidebar:
     st.header("📍 Delivery Location")
@@ -1537,7 +1542,10 @@ with st.sidebar:
     if st.session_state.cart:
         total_price = 0
         for i, item in enumerate(st.session_state.cart):
-            price_val = float(''.join(filter(str.isdigit, item["price"].replace('₹', '')))) if any(c.isdigit() for c in item["price"]) else 0
+            try:
+                price_val = float(''.join(filter(str.isdigit, item["price"].replace('₹', ''))))
+            except:
+                price_val = 0
             total_price += price_val
             with st.container():
                 st.markdown(f"""
@@ -1547,8 +1555,7 @@ with st.sidebar:
                     <a href='{item['url']}' target='_blank'>🔗 View Product</a>
                 </div>
                 """, unsafe_allow_html=True)
-                # Remove button
-                if st.button(f"🗑️ Remove", key=f"remove_{i}"):
+                if st.button("🗑️ Remove", key=f"remove_cart_{i}"):
                     st.session_state.cart.pop(i)
                     st.rerun()
         st.markdown(f"**Total: ₹{total_price:.2f}**")
@@ -1557,7 +1564,7 @@ with st.sidebar:
     else:
         st.markdown("Your cart is empty.")
 
-    # Chat history
+    # Chat History Preview
     st.header("💬 Chat History")
     for msg in st.session_state.chat_messages[-10:]:
         role = "👤" if msg["role"] == "user" else "🤖"
