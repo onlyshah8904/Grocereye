@@ -1331,6 +1331,8 @@
 
 # streamlit_app.py
 # streamlit_app.py
+# streamlit_app.py
+# streamlit_app.py
 import streamlit as st
 import requests
 import json
@@ -1353,7 +1355,7 @@ st.title("🧠 Grocereye AI")
 st.markdown("Your intelligent grocery assistant")
 
 # ======================
-# Gemini AI: Dynamic Intent & Analysis
+# Gemini AI: Query Function
 # ======================
 def gemini_query(prompt: str):
     try:
@@ -1363,8 +1365,8 @@ def gemini_query(prompt: str):
 
         url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
         headers = {
-            "Content-Type": "application/json",
-            "X-goog-api-key": API_KEY,
+            'Content-Type': 'application/json',
+            'X-goog-api-key': API_KEY,
         }
         data = {
             "contents": [{"parts": [{"text": prompt}]}],
@@ -1386,11 +1388,10 @@ def extract_keywords(query: str):
 You are a shopping intent analyzer. Extract only grocery product keywords.
 Rules:
 - Return ONLY a JSON array of lowercase strings.
-- "I am hungry" → ["chips", "biscuits", "chocolates", "nuts", "snacks"]
-- "craving for something spicy" → ["spicy noodles", "potato chips", "pickle", "papad", "namkeen"]
-- "want something sweet" → ["chocolates", "mithai", "ice cream", "desserts", "sweets"]
+- "I am hungry" → ["chips", "biscuits", "chocolates", "nuts"]
+- "craving for something spicy" → ["spicy noodles", "potato chips", "pickle", "papad"]
+- "want something sweet" → ["chocolates", "mithai", "ice cream"]
 - "need ingredients for tea" → ["tea powder", "sugar", "milk", "cardamom"]
-- "dinner" → ["rice", "dal", "roti", "vegetables", "pulses"]
 - Never include verbs, adjectives, or brands.
 - Be concise.
 
@@ -1404,7 +1405,32 @@ Output (JSON only):
         return [query]
 
 # ======================
-# Direct Search (Only BigBasket via ngrok)
+# Is Follow-Up? Use Gemini AI (No Static Keywords)
+# ======================
+def is_follow_up_question(prompt: str, has_previous_results: bool):
+    if not has_previous_results:
+        return False
+
+    instruction = f"""
+You are a conversation analyzer.
+Determine if the user's question is a follow-up to a previous product search.
+Rules:
+- Return ONLY "true" or "false" as a JSON boolean.
+- Questions about price, delivery, comparison, quality, or recommendations → "true"
+- New search intent → "false"
+- Avoid verbs like 'want', 'need' unless it's a new item.
+
+User Question: {prompt.strip()}
+Output (JSON only):
+"""
+    result = gemini_query(instruction)
+    try:
+        return json.loads(result)
+    except:
+        return False
+
+# ======================
+# Direct Search (via ngrok)
 # ======================
 def search_products(keywords: list, pincode: str):
     all_results = []
@@ -1418,7 +1444,7 @@ def search_products(keywords: list, pincode: str):
             if resp.status_code == 200:
                 data = resp.json()
                 for r in data.get("results", []):
-                    if r.get("source") == "BigBasket" and r.get("name") and r["name"] != "N/A" and r.get("price") and r["price"] != "N/A":
+                    if r.get("name") and r["name"] != "N/A" and r.get("price") and r["price"] != "N/A":
                         all_results.append(r)
         except Exception as e:
             st.error(f"Search failed for '{kw}': {str(e)}")
@@ -1531,15 +1557,11 @@ if prompt := st.chat_input("Ask or search..."):
             st.write(prompt)
 
         with st.chat_message("assistant"):
-            q = prompt.lower()
-
-            # Step 1: Check if it's a follow-up question
-            is_follow_up = st.session_state.search_results and any(
-                word in q for word in ["cheapest", "fastest", "quickest", "delivery", "price", "cost", "compare", "better", "recommended", "good", "best", "suggest", "organic", "healthy"]
-            )
+            # Step 1: Check if follow-up using Gemini AI (no static keywords)
+            is_follow_up = is_follow_up_question(prompt, len(st.session_state.search_results) > 0)
 
             if is_follow_up:
-                # ✅ Use Gemini AI to analyze previous results
+                # ✅ Use Gemini to analyze previous results
                 context = "Recent Products:\n" + json.dumps([
                     {
                         "name": p["name"],
@@ -1571,7 +1593,7 @@ Answer concisely. Recommend 1-2 products with reason.
                 })
             else:
                 # Step 2: New search
-                st.write(f"🔍 Understanding your needs...")
+                st.write("🔍 Understanding your needs...")
                 keywords = extract_keywords(prompt)
                 search_keyword = keywords[0] if keywords else "products"
                 results = search_products(keywords, st.session_state.pincode)
