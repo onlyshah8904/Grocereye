@@ -1158,12 +1158,13 @@ def search_products(keywords: list, pincode: str):
                 params={"keyword": kw, "pincode": pincode, "key": "K8904AI"},
                 timeout=60
             )
+            all_results.append([resp.status_code])
             # print(resp.status_code, resp.text)
-            if resp.status_code == 200:
-                data = resp.json()
-                for r in data.get("results", []):
-                    r["matched_keyword"] = kw
-                all_results.extend(data["results"])
+            # if resp.status_code == 200:
+            #     data = resp.json()
+            #     for r in data.get("results", []):
+            #         r["matched_keyword"] = kw
+            #     all_results.extend(data["results"])
         except Exception as e:
             st.error(f"Request failed for '{kw}': {str(e)}")
             continue
