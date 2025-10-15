@@ -92,6 +92,7 @@ def search_in_active_session(keyword, pincode):
 
     try:
         params = {'q': keyword, 'offset': '0', 'limit': '10'}
+        print("hihihihi")
         resp = requests.post(
             'https://blinkit.com/v1/layout/search',
             params=params,
