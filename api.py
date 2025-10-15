@@ -127,7 +127,9 @@ async def init_location(pincode: str = Query(...)):
 
 @app.get("/search")
 async def search(keyword: str = Query(...), pincode: str = Query(...)):
+    print("Search request:", keyword, pincode)
     results = scraper(keyword, pincode)
+    print(f"Found {len(results)} results")
     return {"keyword": keyword, "pincode": pincode, "results": results}
 
 if __name__ == "__main__":
