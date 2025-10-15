@@ -55,7 +55,7 @@ Output (JSON only):
         return {"keywords": [kw.strip().lower() for kw in keywords if kw.strip()]}
     except Exception as e:
         print("Gemini error:", e)
-        return {"keywords": []}
+        return {"keywords": [str(e)]}
 
 @app.post("/init-location")
 async def init_location(pincode: str = Query(...)):
