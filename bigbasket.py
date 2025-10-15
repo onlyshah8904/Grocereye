@@ -70,51 +70,6 @@ def get_session(pincode):
     # finally:
         # browser.quit()
 
-# def search_in_active_session(keyword, pincode):
-#     session = get_session(pincode)
-#     if not session:
-#         return []
-
-#     try:
-#         params = {'type': 'ps', 'slug': keyword, 'page': '1', 'bucket_id': '56'}
-#         resp = requests.get(
-#             'https://www.bigbasket.com/listing-svc/v2/products',
-#             params=params,
-#             cookies=session["cookies"],
-#             headers=headers,
-#             impersonate="edge99"
-#         )
-#         if resp.status_code != 200:
-#             return []
-
-#         data = resp.json()
-#         products = []
-#         for tab in data.get("tabs", []):
-#             for item in tab.get("product_info", {}).get("products", []):
-#                 name = item.get("desc", "N/A")
-
-#                 # ✅ Safe URL handling
-#                 absolute_url = item.get("absolute_url")
-#                 if not absolute_url:
-#                     prod_id = item.get("id", "")
-#                     absolute_url = f"/pd/{prod_id}/"
-#                 url = f"https://www.bigbasket.com{absolute_url}"
-
-#                 # Price
-#                 price_val = item.get("pricing", {}).get("discount", {}).get("prim_price", {}).get("sp", "N/A")
-#                 price = f"₹{price_val}" if isinstance(price_val, (int, float)) else str(price_val)
-
-#                 products.append({
-#                     "source": "BigBasket",
-#                     "name": name,
-#                     "price": price,
-#                     "url": url
-#                 })
-#         return products
-#     except Exception as e:
-#         print("BigBasket search error:", e)
-#         return []
-
 def search_in_active_session(keyword, pincode):
     session = get_session(pincode)
     if not session:
