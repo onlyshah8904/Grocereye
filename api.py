@@ -35,9 +35,9 @@ Output (JSON only):
     json_data = {
         "contents": [{"parts": [{"text": instruction}]}],
         "generationConfig": {
-            "temperature": 0.2,
-            "topP": 0.9,
-            "maxOutputTokens": 100,
+            # "temperature": 0.2,
+            # "topP": 0.9,
+            # "maxOutputTokens": 100,
             "responseMimeType": "application/json"
         }
     }
@@ -52,7 +52,7 @@ Output (JSON only):
         data = response.json()
         raw_text = data['candidates'][0]['content']['parts'][0]['text'].strip()
         keywords = json.loads(raw_text)
-        return {"keywords": [kw.strip().lower() for kw in keywords if kw.strip()]}
+        return {"keywords": [kw.strip().lower() for kw in keywords if kw.strip()] , "raw_response": raw_text}
     except Exception as e:
         print("Gemini error:", e)
         return {"keywords": [str(e)]}
