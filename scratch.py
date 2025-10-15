@@ -98,3 +98,53 @@
 
 
 # print(set_location_via_pincode("380007"))
+
+
+# import requests
+# import json
+
+# # Your API key
+# API_KEY = "AIzaSyA8zupRIY4Ks798nZWTwJsl6ZBX6TVVAZE"
+
+# # Gemini REST API endpoint (using gemini-1.5-flash)
+# url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={API_KEY}"
+
+# # Request payload
+# payload = {
+#     "contents": [
+#         {
+#             "parts": [
+#                 {
+#                     "text": "Explain how photosynthesis works in simple terms."
+#                 }
+#             ]
+#         }
+#     ]
+# }
+
+# # Send POST request
+# response = requests.post(url, json=payload)
+
+# # Check response
+# if response.status_code == 200:
+#     data = response.json()
+#     # Extract the generated text
+#     print(data["candidates"][0]["content"]["parts"][0]["text"])
+# else:
+#     print("Error:", response.status_code, response.text)
+
+
+import requests
+import os
+
+API_KEY = "AIzaSyDBur80fP-rgXq2rwPzHVt--_e8XFjsrKo"
+url = f"https://generativelanguage.googleapis.com/v1/models?key={API_KEY}"
+
+resp = requests.get(url)
+if resp.status_code == 200:
+    models = [m["name"] for m in resp.json()["models"] if "gemini" in m["name"]]
+    print("Available Gemini models:")
+    for m in models:
+        print("-", m)
+else:
+    print("Failed to fetch models:", resp.status_code, resp.text)

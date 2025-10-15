@@ -1134,7 +1134,7 @@ Rules:
         "generationConfig": {"temperature": 0.3, "maxOutputTokens": 300}
     }
 
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 
     try:
         response = requests.post(url, headers=headers, json=json_data, timeout=30)
