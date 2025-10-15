@@ -121,7 +121,7 @@ def search_in_active_session(keyword, pincode):
         return []
 
     try:
-        params = {'type': 'ps', 'slug': keyword, 'page': '1', 'bucket_id': '56'}
+        params = {'type': 'ps', 'slug': keyword, 'page': '1', 'bucket_id': '8'}
         resp = requests.get(
             'https://www.bigbasket.com/listing-svc/v2/products',
             params=params,
