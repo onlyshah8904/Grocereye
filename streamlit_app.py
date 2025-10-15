@@ -1158,6 +1158,7 @@ def search_products(keywords: list, pincode: str):
                 params={"keyword": kw, "pincode": pincode, "key": "K8904AI"},
                 timeout=60
             )
+            # print(resp.status_code, resp.text)
             if resp.status_code == 200:
                 data = resp.json()
                 for r in data.get("results", []):
