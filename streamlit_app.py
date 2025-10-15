@@ -1300,7 +1300,7 @@ if prompt := st.chat_input("Ask for groceries or set pincode..."):
                     keywords = kw_resp.json().get("keywords", [keyword]) if kw_resp.status_code == 200 else [keyword]
                 except:
                     keywords = [keyword]
-
+                print(kw_resp.status_code, keywords , st.session_state.pincode)
                 results = search_products(keywords, st.session_state.pincode)
                 st.session_state.search_results = results
                 show_product_grid(results)
