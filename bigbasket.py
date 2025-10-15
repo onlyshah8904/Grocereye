@@ -1,6 +1,6 @@
 # bigbasket.py
 from DrissionPage import Chromium
-from curl_cffi import requests
+import requests
 from datetime import datetime, timedelta
 
 active_sessions = {}
@@ -127,7 +127,7 @@ def search_in_active_session(keyword, pincode):
             params=params,
             cookies=session["cookies"],
             headers=headers,
-            impersonate="chrome110"
+            # impersonate="chrome110"
         )
         if resp.status_code != 200:
             return []
