@@ -1158,13 +1158,13 @@ def search_products(keywords: list, pincode: str):
                 params={"keyword": kw, "pincode": pincode, "key": "K8904AI"},
                 timeout=60
             )
-            all_results.append([resp.status_code])
-            # print(resp.status_code, resp.text)
-            # if resp.status_code == 200:
-            #     data = resp.json()
-            #     for r in data.get("results", []):
-            #         r["matched_keyword"] = kw
-            #     all_results.extend(data["results"])
+            # all_results.append([resp.status_code])
+            print(resp.status_code, resp.text)
+            if resp.status_code == 200:
+                data = resp.json()
+                for r in data.get("results", []):
+                    r["matched_keyword"] = kw
+                all_results.extend(data["results"])
         except Exception as e:
             st.error(f"Request failed for '{kw}': {str(e)}")
             continue
@@ -1184,8 +1184,8 @@ def is_valid_product(p):
 # Show Product Grid with Add to Cart
 # ======================
 def show_product_grid(products):
-    # valid_products = [p for p in products if is_valid_product(p)].
-    valid_products= [p for p in products]
+    valid_products = [p for p in products if is_valid_product(p)]
+    # valid_products= [p for p in products]
     if not valid_products:
         st.info(f"📭 No valid products found.{valid_products}")
         return
@@ -1300,7 +1300,7 @@ if prompt := st.chat_input("Ask for groceries or set pincode..."):
                     keywords = kw_resp.json().get("keywords", [keyword]) if kw_resp.status_code == 200 else [keyword]
                 except:
                     keywords = [keyword]
-                st.write(kw_resp.status_code, kw_resp.text, st.session_state.pincode,ai_resp)
+                # st.write(kw_resp.status_code, kw_resp.text, st.session_state.pincode,ai_resp)
                 results = search_products(keywords, st.session_state.pincode)
                 st.session_state.search_results = results
                 show_product_grid(results)

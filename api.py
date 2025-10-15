@@ -56,6 +56,8 @@ app = FastAPI()
 #     except Exception as e:
 #         print("Gemini error:", e)
 #         return {"keywords": [str(e)]}
+
+
 @app.get("/keywords")
 async def get_keywords(query: str = Query(...)):
     if not query.strip():
