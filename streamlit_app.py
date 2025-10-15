@@ -1185,7 +1185,7 @@ def is_valid_product(p):
 def show_product_grid(products):
     valid_products = [p for p in products if is_valid_product(p)]
     if not valid_products:
-        st.info("📭 No valid products found.")
+        st.info(f"📭 No valid products found.{valid_products}")
         return
 
     st.markdown(f"### 🎉 Found {len(valid_products)} products")
@@ -1314,6 +1314,3 @@ if prompt := st.chat_input("Ask for groceries or set pincode..."):
                 msg = ai_resp
 
             st.session_state.chat_messages.append({"role": "assistant", "content": msg})
-
-
-

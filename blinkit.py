@@ -99,6 +99,7 @@ def search_in_active_session(keyword, pincode):
             headers={'lat': session["lat"], 'lon': session["lon"]},
             impersonate="edge101"
         )
+        print(resp.text)
         if resp.status_code != 200:
             return []
 
