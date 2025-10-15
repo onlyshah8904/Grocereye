@@ -47,7 +47,7 @@ Output (JSON only):
     try:
         response = http_requests.post(url, headers=headers, json=json_data)
         if response.status_code != 200:
-            return {"keywords": ["shits"]}
+            return {"keywords": [f"Error: {response.status_code}"]}
 
         data = response.json()
         raw_text = data['candidates'][0]['content']['parts'][0]['text'].strip()
