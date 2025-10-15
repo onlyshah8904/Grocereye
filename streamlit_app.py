@@ -1185,7 +1185,7 @@ def is_valid_product(p):
 def show_product_grid(products):
     valid_products = [p for p in products if is_valid_product(p)]
     if not valid_products:
-        st.info(f"📭 No valid products found.{valid_products}")
+        st.info(f"📭 No valid products found.")
         return
 
     st.markdown(f"### 🎉 Found {len(valid_products)} products")
