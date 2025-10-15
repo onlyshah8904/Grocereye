@@ -11,6 +11,51 @@ import json
 
 app = FastAPI()
 
+# @app.get("/keywords")
+# async def get_keywords(query: str = Query(...)):
+#     if not query.strip():
+#         return {"keywords": []}
+
+#     instruction = f"""
+# You are a shopping intent analyzer. Extract only grocery product keywords.
+# Rules:
+# - Return ONLY a JSON array of lowercase strings.
+# - Use synonyms: "chocolates" → "chocolate", "hungry" → "snacks"
+# - Avoid verbs, adjectives.
+
+# Input: {query.strip()}
+# Output (JSON only):
+# """
+
+#     headers = {
+#         'Content-Type': 'application/json',
+#         'X-goog-api-key': API_KEY,
+#     }
+
+#     json_data = {
+#         "contents": [{"parts": [{"text": instruction}]}],
+#         "generationConfig": {
+#             # "temperature": 0.2,
+#             # "topP": 0.9,
+#             # "maxOutputTokens": 100,
+#             # "responseMimeType": "application/json"
+#         }
+#     }
+
+#     url = "https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent"
+
+#     try:
+#         response = http_requests.post(url, headers=headers, json=json_data)
+#         if response.status_code != 200:
+#             return {"keywords": [f"Error: {response.status_code} - {response.text}"]}
+
+#         data = response.json()
+#         raw_text = data['candidates'][0]['content']['parts'][0]['text'].strip()
+#         keywords = json.loads(raw_text)
+#         return {"keywords": [kw.strip().lower() for kw in keywords if kw.strip()] , "raw_response": raw_text}
+#     except Exception as e:
+#         print("Gemini error:", e)
+#         return {"keywords": [str(e)]}
 @app.get("/keywords")
 async def get_keywords(query: str = Query(...)):
     if not query.strip():
@@ -22,6 +67,7 @@ Rules:
 - Return ONLY a JSON array of lowercase strings.
 - Use synonyms: "chocolates" → "chocolate", "hungry" → "snacks"
 - Avoid verbs, adjectives.
+- Do NOT include any other text, explanation, or formatting.
 
 Input: {query.strip()}
 Output (JSON only):
@@ -35,27 +81,39 @@ Output (JSON only):
     json_data = {
         "contents": [{"parts": [{"text": instruction}]}],
         "generationConfig": {
-            # "temperature": 0.2,
-            # "topP": 0.9,
-            # "maxOutputTokens": 100,
-            "responseMimeType": "application/json"
+            "temperature": 0.2,
+            "topP": 0.9,
+            "maxOutputTokens": 100,
+            # "responseMimeType": "application/json"  # ❌ NOT supported here
         }
     }
 
-    url = "https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent"
+    url = "https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent"  # ✅ no space!
 
     try:
         response = http_requests.post(url, headers=headers, json=json_data)
         if response.status_code != 200:
-            return {"keywords": [f"Error: {response.status_code} - {response.text}"]}
+            return {"keywords": [], "error": f"HTTP {response.status_code}", "details": response.text}
 
         data = response.json()
         raw_text = data['candidates'][0]['content']['parts'][0]['text'].strip()
-        keywords = json.loads(raw_text)
-        return {"keywords": [kw.strip().lower() for kw in keywords if kw.strip()] , "raw_response": raw_text}
+
+        # Optional: strip markdown code fences
+        import re
+        json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', raw_text)
+        json_str = json_match.group(1) if json_match else raw_text
+
+        keywords = json.loads(json_str)
+        return {
+            "keywords": [kw.strip().lower() for kw in keywords if isinstance(kw, str) and kw.strip()],
+            "raw_response": raw_text
+        }
+
     except Exception as e:
         print("Gemini error:", e)
-        return {"keywords": [str(e)]}
+        return {"keywords": [], "error": str(e)}
+
+
 
 @app.post("/init-location")
 async def init_location(pincode: str = Query(...)):
