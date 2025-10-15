@@ -240,7 +240,7 @@
 #         else:
 #             with st.spinner("Setting location..."):
 #                 try:
-#                     resp = requests.post(f"https://bf7dbf1232c8.ngrok-free.app/init-location?pincode={pincode_input}")
+#                     resp = requests.post(f"https://682d706b2f2c.ngrok-free.app/init-location?pincode={pincode_input}")
 #                     if resp.status_code == 200:
 #                         st.session_state.pincode = pincode_input
 #                         st.success(f"✅ Location set: {pincode_input}")
@@ -272,7 +272,7 @@
 #                     st.session_state.chat_messages = []
 
 #                     # Get keywords
-#                     kw_resp = requests.get(f"https://bf7dbf1232c8.ngrok-free.app/keywords?query={requests.utils.quote(user_query)}")
+#                     kw_resp = requests.get(f"https://682d706b2f2c.ngrok-free.app/keywords?query={requests.utils.quote(user_query)}")
 #                     if kw_resp.status_code != 200:
 #                         st.error("Failed to understand your query.")
 #                         st.stop()
@@ -288,7 +288,7 @@
 #                     for kw in keywords:
 #                         with st.spinner(f"Searching for '{kw}'..."):
 #                             search_resp = requests.get(
-#                                 f"https://bf7dbf1232c8.ngrok-free.app/search?keyword={kw}&pincode={st.session_state.pincode}"
+#                                 f"https://682d706b2f2c.ngrok-free.app/search?keyword={kw}&pincode={st.session_state.pincode}"
 #                             )
 #                             if search_resp.status_code == 200:
 #                                 data = search_resp.json()
@@ -470,7 +470,7 @@
 #         else:
 #             with st.spinner("Setting location..."):
 #                 try:
-#                     resp = requests.post(f"https://bf7dbf1232c8.ngrok-free.app/init-location?pincode={pincode_input}")
+#                     resp = requests.post(f"https://682d706b2f2c.ngrok-free.app/init-location?pincode={pincode_input}")
 #                     if resp.status_code == 200:
 #                         st.session_state.pincode = pincode_input
 #                         st.success(f"✅ Location set: {pincode_input}")
@@ -505,7 +505,7 @@
 #             with st.spinner("🧠 Understanding your needs..."):
 #                 try:
 #                     # Get keywords
-#                     kw_resp = requests.get(f"https://bf7dbf1232c8.ngrok-free.app/keywords?query={requests.utils.quote(user_query)}")
+#                     kw_resp = requests.get(f"https://682d706b2f2c.ngrok-free.app/keywords?query={requests.utils.quote(user_query)}")
 #                     if kw_resp.status_code != 200:
 #                         st.error("Failed to understand your query.")
 #                         st.stop()
@@ -521,7 +521,7 @@
 #                     for kw in keywords:
 #                         with st.spinner(f"Searching for '{kw}'..."):
 #                             search_resp = requests.get(
-#                                 f"https://bf7dbf1232c8.ngrok-free.app/search?keyword={kw}&pincode={st.session_state.pincode}"
+#                                 f"https://682d706b2f2c.ngrok-free.app/search?keyword={kw}&pincode={st.session_state.pincode}"
 #                             )
 #                             if search_resp.status_code == 200:
 #                                 data = search_resp.json()
@@ -704,7 +704,7 @@
 #         else:
 #             with st.spinner("Setting location..."):
 #                 try:
-#                     resp = requests.post(f"https://bf7dbf1232c8.ngrok-free.app/init-location?pincode={pincode_input}")
+#                     resp = requests.post(f"https://682d706b2f2c.ngrok-free.app/init-location?pincode={pincode_input}")
 #                     if resp.status_code == 200:
 #                         st.session_state.pincode = pincode_input
 #                         st.success(f"✅ Location set: {pincode_input}")
@@ -731,7 +731,7 @@
 #         with st.spinner("🧠 Understanding your needs..."):
 #             try:
 #                 # Fetch keywords
-#                 kw_resp = requests.get(f"https://bf7dbf1232c8.ngrok-free.app/keywords?query={requests.utils.quote(user_query)}")
+#                 kw_resp = requests.get(f"https://682d706b2f2c.ngrok-free.app/keywords?query={requests.utils.quote(user_query)}")
 #                 if kw_resp.status_code != 200:
 #                     st.error("Failed to understand your query.")
 #                 else:
@@ -745,7 +745,7 @@
 #                         for kw in keywords:
 #                             with st.spinner(f"Searching for '{kw}'..."):
 #                                 search_resp = requests.get(
-#                                     f"https://bf7dbf1232c8.ngrok-free.app/search?keyword={kw}&pincode={st.session_state.pincode}"
+#                                     f"https://682d706b2f2c.ngrok-free.app/search?keyword={kw}&pincode={st.session_state.pincode}"
 #                                 )
 #                                 if search_resp.status_code == 200:
 #                                     data = search_resp.json()
@@ -888,7 +888,7 @@
 #         try:
 #             # 🔥 Use your ngrok URL
 #             resp = requests.get(
-#                 f"https://bf7dbf1232c8.ngrok-free.app/search",
+#                 f"https://682d706b2f2c.ngrok-free.app/search",
 #                 params={"keyword": kw, "pincode": pincode, "key": "K8904AI"},
 #                 timeout=60
 #             )
@@ -952,7 +952,7 @@
 #                 with st.spinner("Setting location..."):
 #                     try:
 #                         resp = requests.post(
-#                             f"https://bf7dbf1232c8.ngrok-free.app/init-location",
+#                             f"https://682d706b2f2c.ngrok-free.app/init-location",
 #                             params={"pincode": pincode_input, "key": "K8904AI"}
 #                         )
 #                         if resp.status_code == 200:
@@ -1017,7 +1017,7 @@
 #                 # Expand keywords
 #                 try:
 #                     kw_resp = requests.get(
-#                         f"https://bf7dbf1232c8.ngrok-free.app/keywords?query={keyword}"
+#                         f"https://682d706b2f2c.ngrok-free.app/keywords?query={keyword}"
 #                     )
 #                     keywords = kw_resp.json().get("keywords", [keyword]) if kw_resp.status_code == 200 else [keyword]
 #                 except:
@@ -1154,7 +1154,7 @@ def search_products(keywords: list, pincode: str):
     for kw in keywords:
         try:
             resp = requests.get(
-                f"https://bf7dbf1232c8.ngrok-free.app/search",
+                f"https://682d706b2f2c.ngrok-free.app/search",
                 params={"keyword": kw, "pincode": pincode, "key": "K8904AI"},
                 timeout=60
             )
@@ -1235,7 +1235,7 @@ with st.sidebar:
                 with st.spinner("Setting location..."):
                     try:
                         resp = requests.post(
-                            f"https://bf7dbf1232c8.ngrok-free.app/init-location",
+                            f"https://682d706b2f2c.ngrok-free.app/init-location",
                             params={"pincode": pincode_input, "key": "K8904AI"}
                         )
                         if resp.status_code == 200:
@@ -1293,7 +1293,7 @@ if prompt := st.chat_input("Ask for groceries or set pincode..."):
 
                 try:
                     kw_resp = requests.get(
-                        f"https://bf7dbf1232c8.ngrok-free.app/keywords?query={keyword}"
+                        f"https://682d706b2f2c.ngrok-free.app/keywords?query={keyword}"
                     )
                     keywords = kw_resp.json().get("keywords", [keyword]) if kw_resp.status_code == 200 else [keyword]
                 except:
